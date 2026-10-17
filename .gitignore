@@ -1,0 +1,15 @@
+node_modules/
+.DS_Store
+Thumbs.db
+*.log
+
+# Mídia de cliente fica FORA do repositório. Foto de paciente num repositório
+# GitHub é o tipo de coisa que ninguém percebe até estar indexada — e o lugar
+# dela é o R2, com consentimento registrado, não uma pasta de testes.
+*.jpg
+*.jpeg
+*.heic
+*.mov
+*.mp4
+*.pdf
+!Sistema/assets/**

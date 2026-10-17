@@ -1,0 +1,101 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   5K9 APOLLO — vocabulário compartilhado das páginas.
+
+   Prefixo .ap-. Aqui mora o que aparece em MAIS DE UMA tela: o indicador, o
+   cartão de seção, o vazio, o filtro, o status da peça e o selo de
+   consentimento. O que é de uma página só continua no <style> dela.
+
+   Vários destes são o .vz- do Chronos com outro prefixo, sem mudar uma
+   regra — quem usa as duas ferramentas lê os mesmos cartões.
+
+   A regra do design system vale sem exceção: nenhuma cor literal, tudo por
+   var(--token). É o que faz o tema claro funcionar sem ninguém revisar.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Indicadores ──────────────────────────────────────────────────────── */
+.ap-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: var(--bento-gap); }
+.ap-kpi { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-5); text-decoration: none; }
+.ap-kpi__topo { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.ap-kpi__rotulo { font-size: var(--text-xs); color: var(--text-tertiary); }
+.ap-kpi__icone {
+    width: 30px; height: 30px; flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: var(--radius-sm);
+    background: var(--surface-3); color: var(--text-secondary);
+}
+.ap-kpi__icone i, .ap-kpi__icone svg { width: 15px; height: 15px; }
+.ap-kpi__valor {
+    font-size: 28px; font-weight: 600;
+    letter-spacing: var(--tracking-tight); line-height: 1.1;
+    color: var(--text-primary); font-variant-numeric: tabular-nums;
+}
+.ap-kpi--marca   .ap-kpi__icone { background: var(--accent-muted);  color: var(--accent); }
+.ap-kpi--info    .ap-kpi__icone { background: var(--info-muted);    color: var(--info); }
+.ap-kpi--atencao .ap-kpi__icone { background: var(--warning-muted); color: var(--warning); }
+.ap-kpi--ok      .ap-kpi__icone { background: var(--success-muted); color: var(--success); }
+
+/* ── Cartão de seção ──────────────────────────────────────────────────── */
+.ap-secao { padding: var(--space-6); display: flex; flex-direction: column; gap: var(--space-5); }
+.ap-secao__cabeca { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }
+
+/* ── Vazio ────────────────────────────────────────────────────────────── */
+.ap-vazio {
+    display: flex; flex-direction: column; align-items: center; gap: var(--space-3);
+    padding: var(--space-10) var(--space-5); text-align: center;
+}
+.ap-vazio__icone {
+    width: 44px; height: 44px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--surface-3); color: var(--text-tertiary);
+}
+.ap-vazio__icone i, .ap-vazio__icone svg { width: 20px; height: 20px; }
+.ap-vazio h3 { margin: 0; font-size: var(--text-body); font-weight: 600; color: var(--text-primary); }
+.ap-vazio p  { margin: 0; font-size: var(--text-sm); color: var(--text-tertiary); max-width: 40ch; line-height: var(--leading-body); }
+
+/* ── Filtros ──────────────────────────────────────────────────────────── */
+.ap-filtros { display: flex; align-items: center; gap: var(--space-1); flex-wrap: wrap; }
+.ap-filtro {
+    height: 32px; padding: 0 var(--space-4);
+    border: 1px solid transparent; border-radius: var(--radius-pill);
+    background: transparent; color: var(--text-tertiary);
+    font-family: var(--font-sans); font-size: var(--text-sm); font-weight: 500;
+    cursor: pointer; white-space: nowrap;
+    transition: background-color var(--dur-fast), color var(--dur-fast), border-color var(--dur-fast);
+}
+.ap-filtro:hover { background: var(--surface-3); color: var(--text-primary); }
+.ap-filtro.is-active { background: var(--accent-muted); border-color: var(--accent-border); color: var(--accent); }
+
+/* ── Status da peça ───────────────────────────────────────────────────────
+   Os três do README, poucos e fixos: cada valor vira regra em código. A cor
+   responde "de quem é a vez", lida de longe — azul espera o cliente, âmbar
+   é trabalho nosso, verde acabou. */
+.ap-status {
+    display: inline-flex; align-items: center; gap: 5px;
+    height: 22px; padding: 0 var(--space-3);
+    border-radius: var(--radius-pill);
+    font-size: var(--text-xs); font-weight: 600; white-space: nowrap;
+    background: var(--surface-3); color: var(--text-tertiary);
+}
+.ap-status i, .ap-status svg { width: 12px; height: 12px; }
+.ap-status--a_revisar { background: var(--info-muted);    color: var(--info); }
+.ap-status--em_ajuste { background: var(--warning-muted); color: var(--warning); }
+.ap-status--aprovado  { background: var(--success-muted); color: var(--success); }
+
+/* ── Selo de consentimento ────────────────────────────────────────────────
+   Sem autorização, a foto não entra no link. O selo diz isso na própria
+   miniatura, para ninguém descobrir pela reclamação do cliente que "faltou
+   uma". Âmbar e não vermelho: é pendência de cadastro, não erro. */
+.ap-selo {
+    display: inline-flex; align-items: center; gap: 5px;
+    height: 22px; padding: 0 var(--space-2);
+    border-radius: var(--radius-pill);
+    font-size: var(--text-xs); font-weight: 600; white-space: nowrap;
+}
+.ap-selo i, .ap-selo svg { width: 12px; height: 12px; }
+.ap-selo--ok    { background: var(--success-muted); color: var(--success); }
+.ap-selo--falta { background: var(--warning-muted); color: var(--warning); }
+
+/* ── Responsivo das telas internas (max-width, como no Chronos) ───────── */
+@media (max-width: 720px) {
+    .ap-secao { padding: var(--space-4); }
+}
