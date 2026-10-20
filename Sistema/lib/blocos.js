@@ -227,34 +227,17 @@ export const BLOCOS = {
               ] },
         ],
         resumo: (d) => (d.cores || []).map(c => c.nome || c.hex).join(', ') || 'sem cores',
-        desenhar: (d, ctx) => `
+        desenhar: (d, ctx) => {
+            const cores = (d.cores || []).filter(c => hexValido(c.hex));
+            return `
             <section class="apr-secao apr-paleta">
                 <div class="apr-largura">
                     ${cabecaSecao(d, ctx)}
                     ${d.texto ? `<div class="apr-lead">${paragrafos(d.texto)}</div>` : ''}
-                    <div class="apr-paleta__grade">
-                        ${(d.cores || []).filter(c => hexValido(c.hex)).map(c => {
-                            const hex = c.hex.toUpperCase();
-                            const rgb = rgbDe(hex).join(' ');
-                            const valor = (rotulo, v) => `
-                                <button class="apr-copiar" data-copiar="${esc(v)}" type="button">
-                                    <span>${rotulo}</span><b>${esc(v)}</b></button>`;
-                            return `
-                                <article class="apr-cor">
-                                    <div class="apr-cor__amostra" style="background:${hex}; color:${contraste(hex)}">
-                                        <span>${esc(c.nome || hex)}</span>
-                                    </div>
-                                    <div class="apr-cor__valores">
-                                        ${valor('HEX', hex)}
-                                        ${valor('RGB', rgb)}
-                                        ${c.cmyk ? valor('CMYK', c.cmyk) : ''}
-                                        ${c.pantone ? valor('Pantone', c.pantone) : ''}
-                                    </div>
-                                </article>`;
-                        }).join('') || vazio('Adicione as cores da marca.', ctx)}
-                    </div>
+                    ${cores.length ? paletaHTML(cores) : vazio('Adicione as cores da marca.', ctx)}
                 </div>
-            </section>`,
+            </section>`;
+        },
     },
 
     tipografia: {
@@ -266,10 +249,16 @@ export const BLOCOS = {
             { nome: 'rotulo', rotulo: 'Rótulo da seção', tipo: 'texto', placeholder: 'Tipografia' },
             { nome: 'titulo', rotulo: 'Título', tipo: 'texto' },
             { nome: 'fontes', rotulo: 'Fontes', tipo: 'lista', rotuloItem: 'fonte',
-              novo: () => ({ nome: '', uso: '', fonte_chave: null, arquivo_nome: '', licenca_web: false, amostra: null }),
+              novo: () => ({ nome: '', uso: '', classificacao: '', estilos: '', descricao: '', pesos: '',
+                             fonte_chave: null, arquivo_nome: '', licenca_web: false, amostra: null }),
               campos: [
                   { nome: 'nome', rotulo: 'Nome da fonte', tipo: 'texto', placeholder: 'Instrument Sans' },
                   { nome: 'uso', rotulo: 'Uso', tipo: 'texto', placeholder: 'Títulos e destaques' },
+                  { nome: 'classificacao', rotulo: 'Classificação', tipo: 'texto', placeholder: 'Grotesca', largura: 'metade' },
+                  { nome: 'estilos', rotulo: 'Estilos', tipo: 'texto', placeholder: '12 estilos', largura: 'metade' },
+                  { nome: 'descricao', rotulo: 'Por que esta fonte', tipo: 'area' },
+                  { nome: 'pesos', rotulo: 'Pesos em destaque', tipo: 'texto', placeholder: 'ExtraLight, Medium, Bold',
+                    dica: 'Separados por vírgula. Pesos diferentes só aparecem com fonte variável; com arquivo de um peso só, as colunas saem iguais.' },
                   { nome: 'fonte_chave', rotulo: 'Arquivo da fonte', tipo: 'fonte' },
                   { nome: 'licenca_web', rotulo: 'A licença permite uso na web', tipo: 'sim',
                     dica: 'Sem isto, o arquivo não vai para a página — a amostra usa a imagem abaixo.' },
@@ -283,28 +272,8 @@ export const BLOCOS = {
                 <div class="apr-largura">
                     ${cabecaSecao(d, ctx)}
                     <div class="apr-tipo__lista">
-                        ${(d.fontes || []).map((f, i) => {
-                            const familia = `apr-fonte-${ctx.bloco?.id || 'b'}-${i}`;
-                            const comArquivo = f.fonte_chave && f.licenca_web;
-                            const amostra = comArquivo ? `
-                                <div class="apr-tipo__amostra" data-fonte-chave="${esc(f.fonte_chave)}"
-                                     data-fonte-familia="${familia}" style="font-family:'${familia}', var(--font-sans)">
-                                    <span class="apr-tipo__aa">Aa</span>
-                                    <p class="apr-tipo__linha">ABCDEFGHIJKLMNOPQRSTUVWXYZ</p>
-                                    <p class="apr-tipo__linha">abcdefghijklmnopqrstuvwxyz</p>
-                                    <p class="apr-tipo__linha">0123456789 &amp; @ ? ! %</p>
-                                </div>`
-                                : f.amostra ? `<div class="apr-tipo__imagem">${imgHTML(f.amostra, { alt: f.nome })}</div>`
-                                : vazio('Envie o arquivo da fonte (com licença web) ou uma amostra em imagem.', ctx);
-                            return `
-                                <article class="apr-tipo__fonte">
-                                    <div class="apr-tipo__ficha">
-                                        <h3>${esc(f.nome || 'Fonte')}</h3>
-                                        ${f.uso ? `<span>${esc(f.uso)}</span>` : ''}
-                                    </div>
-                                    ${amostra}
-                                </article>`;
-                        }).join('') || vazio('Adicione as fontes da marca.', ctx)}
+                        ${(d.fontes || []).map((f, i) => fonteHTML(f, `apr-fonte-${ctx.bloco?.id || 'b'}-${i}`, ctx)).join('')
+                          || vazio('Adicione as fontes da marca.', ctx)}
                     </div>
                 </div>
             </section>`,
@@ -444,6 +413,92 @@ export const BLOCOS = {
     },
 };
 
+/* ── PALETA EM MOSAICO ─────────────────────────────────────────────────
+   A primeira metade das cores empilha numa coluna larga; o resto vira
+   colunas altas ao lado, da altura da pilha inteira. É a ordem da lista
+   que decide: as cores principais vêm primeiro. No celular, uma embaixo
+   da outra. */
+function paletaHTML(cores) {
+    const naPilha = cores.length === 1 ? 1 : Math.ceil(cores.length / 2);
+    const colunas = cores.length - naPilha;
+    // A pilha fica com pouco mais da metade quando há duas colunas ao lado.
+    const trilhos = colunas
+        ? `minmax(0, ${colunas === 1 ? 1.5 : 2.8}fr) repeat(${colunas}, minmax(0, 1fr))`
+        : '1fr';
+    const painel = (c, lugar) => {
+        const hex = c.hex.toUpperCase();
+        const valor = (rotulo, v) => `
+            <button class="apr-copiar" data-copiar="${esc(v)}" type="button">
+                <span>${rotulo}</span><b>${esc(v)}</b></button>`;
+        return `
+            <article class="apr-cor" style="background:${hex}; color:${contraste(hex)}; ${lugar}">
+                <h3 class="apr-cor__nome">${esc(c.nome || hex)}</h3>
+                <div class="apr-cor__valores">
+                    ${valor('RGB', rgbDe(hex).join(', '))}
+                    ${valor('HEX', hex)}
+                    ${c.cmyk ? valor('CMYK', c.cmyk) : ''}
+                    ${c.pantone ? valor('Pantone', c.pantone) : ''}
+                </div>
+            </article>`;
+    };
+    return `
+        <div class="apr-paleta__mosaico" style="--pilha:${naPilha}; --trilhos:${trilhos}">
+            ${cores.map((c, i) => painel(c, i < naPilha
+                ? `--coluna:1; --linha:${i + 1}`
+                : `--coluna:${i - naPilha + 2}; --linha:1 / -1`)).join('')}
+        </div>`;
+}
+
+/* ── TIPOGRAFIA ────────────────────────────────────────────────────────
+   À esquerda, a ficha: o nome escrito na própria fonte, a linha com
+   classificação, uso e estilos, o porquê e o alfabeto. À direita, um "a"
+   enorme por peso, cada um cortado pela coluna seguinte. Os pesos chegam
+   por nome ("Bold") ou número ("700"). */
+const PESOS = {
+    thin: 100, hairline: 100, extralight: 200, ultralight: 200, light: 300,
+    regular: 400, normal: 400, book: 400, medium: 500, semibold: 600, demibold: 600,
+    bold: 700, extrabold: 800, ultrabold: 800, black: 900, heavy: 900,
+};
+const pesosDe = (texto) => String(texto || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 4)
+    .map(s => {
+        const numero = s.match(/\d{3}/)?.[0];
+        const nome = s.replace(/\d{3}/, '').trim();
+        const peso = numero ? Number(numero) : PESOS[nome.toLowerCase().replace(/[\s_-]/g, '')] || 400;
+        return { nome: nome || String(peso), peso: Math.min(1000, Math.max(1, peso)) };
+    });
+
+function fonteHTML(f, familia, ctx) {
+    const comArquivo = f.fonte_chave && f.licenca_web;
+    const meta = [f.classificacao, f.uso, f.estilos].filter(Boolean);
+    const pesos = pesosDe(f.pesos);
+    const lado = comArquivo ? `
+            <div class="apr-fonte__pesos">
+                ${(pesos.length ? pesos : [{ nome: '', peso: null }]).map(p => `
+                    <div class="apr-fonte__peso">
+                        ${p.nome ? `<span>${esc(p.nome)}</span>` : ''}
+                        <b class="apr-fonte__a" ${p.peso ? `style="font-weight:${p.peso}"` : ''} aria-hidden="true">a</b>
+                    </div>`).join('')}
+            </div>`
+        : f.amostra ? `<div class="apr-fonte__imagem">${imgHTML(f.amostra, { alt: f.nome })}</div>`
+        : vazio('Envie o arquivo da fonte (com licença web) ou uma amostra em imagem.', ctx);
+    const fonte = comArquivo
+        ? `data-fonte-chave="${esc(f.fonte_chave)}" data-fonte-familia="${familia}" style="font-family:'${familia}', var(--font-sans)"`
+        : '';
+    return `
+        <article class="apr-fonte ${lado ? '' : 'is-so-ficha'}" ${fonte}>
+            <div class="apr-fonte__ficha">
+                <h3 class="apr-fonte__nome">${esc(f.nome || 'Fonte')}</h3>
+                ${meta.length ? `<div class="apr-fonte__meta">${meta.map(m => `<span>${esc(m)}</span>`).join('')}</div>` : ''}
+                <div class="apr-fonte__corpo">
+                    ${f.descricao ? paragrafos(f.descricao) : ''}
+                    ${comArquivo ? `<p class="apr-fonte__glifos">ABCDEFGHIJKLMNOPQRSTUVWXYZ
+                        abcdefghijklmnopqrstuvwxyz 0123456789!@#$%&amp;*()?</p>` : ''}
+                </div>
+            </div>
+            ${lado}
+        </article>`;
+}
+
 /* ── NENHUMA IMAGEM SOZINHA EM COLUNA DUPLA ────────────────────────────
    Em duas colunas, toda imagem tem companheira ao lado, com a base
    alinhada. A que sobra — a terceira de três, a quinta de cinco — não fica
@@ -552,7 +607,10 @@ export const pintarMidia = (raiz) => {
         const url = await midia.url(el.dataset.fonteChave).catch(() => null);
         if (!url) return;
         try {
-            const fonte = new FontFace(familia, `url(${url})`);
+            // Faixa inteira de pesos: fonte variável mostra cada peso de
+            // verdade; fonte de um peso só fica igual, em vez de o navegador
+            // engrossar ou afinar o desenho por conta própria.
+            const fonte = new FontFace(familia, `url(${url})`, { weight: '1 1000' });
             await fonte.load();
             document.fonts.add(fonte);
         } catch {
@@ -678,36 +736,73 @@ export const ESTILOS_BLOCOS = `
     .apr-logo__palco .apr-vazio, .apr-logo__palco .apr-buraco { width: 100%; }
 
     /* ── Paleta ───────────────────────────────────────────────────────── */
-    .apr-paleta__grade { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--space-3); }
-    .apr-cor { display: flex; flex-direction: column; border-radius: var(--radius-lg); overflow: hidden;
-               border: 1px solid var(--border-subtle); background: var(--surface-1); }
-    .apr-cor__amostra {
-        aspect-ratio: 1; display: flex; align-items: flex-end; padding: var(--space-4);
-        font-weight: 700; font-size: clamp(16px, 2vw, 22px); letter-spacing: var(--tracking-tight);
+    .apr-paleta__mosaico {
+        display: flex; flex-direction: column; overflow: hidden;
+        border-radius: var(--radius-lg); border: 1px solid var(--border-subtle);
     }
-    .apr-cor__valores { display: flex; flex-direction: column; padding: var(--space-2); }
+    .apr-cor {
+        container-type: inline-size;
+        min-height: 176px; padding: var(--space-5);
+        display: flex; flex-direction: column; justify-content: space-between; gap: var(--space-6);
+    }
+    /* O título herda a cor do painel: a trava de títulos do DS (html.ds h3)
+       pintaria o nome de claro em cima do marfim. */
+    .apr-cor h3.apr-cor__nome { margin: 0; font-family: var(--font-sans); font-size: clamp(18px, 1.8vw, 24px); font-weight: 500; letter-spacing: var(--tracking-tight); color: inherit; }
+    .apr-cor__valores { display: flex; flex-direction: column; align-items: flex-start; }
     .apr-copiar {
-        display: flex; justify-content: space-between; align-items: center; gap: var(--space-3);
-        min-height: 40px; padding: 0 var(--space-3); border: none; border-radius: var(--radius-sm);
-        background: none; color: var(--text-primary); font-family: var(--font-sans); cursor: pointer;
-        transition: background-color var(--dur-fast);
+        display: grid; grid-template-columns: 4.5em auto; align-items: baseline; gap: var(--space-3);
+        min-height: 28px; padding: 2px var(--space-2); margin-left: calc(-1 * var(--space-2));
+        border: none; border-radius: var(--radius-sm); background: none; color: inherit; text-align: left;
+        font-family: var(--font-sans); cursor: pointer; transition: background-color var(--dur-fast);
     }
-    .apr-copiar span { font-size: 10px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: var(--tracking-wide); }
+    .apr-copiar span { font-size: var(--text-xs); opacity: 0.72; letter-spacing: var(--tracking-wide); text-transform: uppercase; }
     /* Código de cor não quebra: "245 198" numa linha e "110" na outra é um
        código errado para quem copia com os olhos. */
-    .apr-copiar b { font-size: var(--text-xs); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .apr-copiar:hover { background: var(--surface-3); }
-    .apr-copiar.is-copiado span { color: var(--success); }
+    .apr-copiar b { font-size: var(--text-sm); font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .apr-copiar:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
+    .apr-copiar.is-copiado span { opacity: 1; }
+    /* Coluna estreita: o rótulo sobe para cima do código, e o código
+       continua inteiro numa linha. */
+    @container (max-width: 210px) {
+        .apr-copiar { grid-template-columns: 1fr; gap: 0; padding-top: 4px; padding-bottom: 4px; }
+    }
 
     /* ── Tipografia ───────────────────────────────────────────────────── */
-    .apr-tipo__lista { display: flex; flex-direction: column; gap: clamp(40px, 6vw, 80px); }
-    .apr-tipo__fonte { display: grid; gap: var(--space-5); }
-    .apr-tipo__ficha h3 { margin: 0; font-size: var(--text-h3); font-weight: 600; color: var(--text-primary); }
-    .apr-tipo__ficha span { font-size: var(--text-sm); color: var(--text-tertiary); }
-    .apr-tipo__amostra { color: var(--text-primary); overflow: hidden; }
-    .apr-tipo__aa { display: block; font-size: clamp(96px, 18vw, 220px); line-height: 0.9; margin-bottom: var(--space-4); }
-    .apr-tipo__linha { margin: 0; font-size: clamp(18px, 2.4vw, 30px); line-height: 1.35; overflow-wrap: anywhere; }
-    .apr-tipo__imagem img { width: 100%; height: auto; display: block; border-radius: var(--radius-md); }
+    .apr-tipo__lista { display: flex; flex-direction: column; gap: clamp(64px, 10vw, 140px); }
+    .apr-fonte { display: grid; gap: var(--space-8); color: var(--text-primary); }
+    .apr-fonte h3.apr-fonte__nome {
+        margin: 0; font-family: inherit; color: inherit;
+        font-size: clamp(44px, 17cqi, 128px); line-height: 0.95; font-weight: 500; letter-spacing: var(--tracking-tight);
+        overflow-wrap: break-word;
+    }
+    .apr-fonte__meta {
+        display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-2) var(--space-5);
+        margin-top: clamp(40px, 8vw, 120px); padding-top: var(--space-3);
+        border-top: 1px solid var(--border-strong); font-size: var(--text-sm); color: var(--text-secondary);
+    }
+    /* O nome mede pela ficha, não pela tela: palavra longa encolhe em vez
+       de quebrar no meio. */
+    .apr-fonte__ficha { min-width: 0; container-type: inline-size; }
+    .apr-fonte__corpo { margin-top: clamp(32px, 5vw, 64px); }
+    .apr-fonte__corpo p:not(.apr-fonte__glifos) {
+        margin: 0 0 1em; max-width: 52ch; font-size: var(--text-sm); line-height: 1.55; color: var(--text-secondary);
+    }
+    .apr-fonte__glifos { margin: var(--space-6) 0 0; font-size: clamp(24px, 3vw, 34px); line-height: 1.15; overflow-wrap: anywhere; }
+
+    /* Uma coluna por peso. O "a" passa da largura de propósito: a coluna
+       seguinte o corta, e o que sobra é a forma da letra. */
+    .apr-fonte__pesos { display: flex; min-height: clamp(280px, 44vw, 600px); border-right: 1px solid var(--border-strong); }
+    .apr-fonte__peso {
+        position: relative; flex: 1 1 0; min-width: 0; overflow: hidden;
+        padding: var(--space-4); border-left: 1px solid var(--border-strong);
+    }
+    .apr-fonte__peso:last-child { flex-grow: 1.7; }
+    .apr-fonte__peso span { position: relative; z-index: 1; font-size: var(--text-sm); color: var(--text-secondary); }
+    .apr-fonte__a {
+        position: absolute; left: var(--space-3); bottom: -0.1em;
+        font-size: clamp(200px, 30vw, 440px); line-height: 1; font-weight: inherit;
+    }
+    .apr-fonte__imagem img { width: 100%; height: auto; display: block; border-radius: var(--radius-md); }
 
     /* ── Aplicações ───────────────────────────────────────────────────── */
     .apr-apl { --apr-vao: var(--space-3); }
@@ -784,18 +879,23 @@ export const ESTILOS_BLOCOS = `
         .apr-capa__texto { padding-left: var(--space-8); padding-right: var(--space-8); }
         .apr-logo__grade { grid-template-columns: repeat(2, 1fr); }
         .apr-logo__item.is-principal { grid-column: 1 / -1; }
-        .apr-paleta__grade { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
-        .apr-copiar span { font-size: var(--text-xs); }
-        .apr-copiar b { font-size: var(--text-sm); }
+        .apr-paleta__mosaico {
+            display: grid;
+            grid-template-columns: var(--trilhos);
+            grid-template-rows: repeat(var(--pilha), minmax(clamp(200px, 22vw, 280px), auto));
+        }
+        .apr-cor { grid-column: var(--coluna); grid-row: var(--linha); }
         .apr-apl { --apr-vao: var(--space-4); }
         .apr-apl__par { flex-direction: row; align-items: flex-start; }
         .apr-apl__par .apr-apl__item { flex: var(--r) 1 0; }
         .apr-apl__grade { grid-template-columns: repeat(2, 1fr); }
-        .apr-tipo__fonte { grid-template-columns: minmax(180px, 1fr) 3fr; align-items: start; }
     }
     @media (min-width: 1024px) {
         .apr-texto__grade { grid-template-columns: 5fr 7fr; gap: var(--space-12); }
         .apr-texto__grade .apr-secao__cabeca { position: sticky; top: var(--space-8); align-self: start; }
         .apr-fim__grade { grid-template-columns: 1fr 1fr; align-items: start; }
+        .apr-fonte { grid-template-columns: 1fr 1fr; gap: var(--space-10); }
+        .apr-fonte.is-so-ficha { grid-template-columns: 1fr; }
+        .apr-fonte__corpo { padding-left: 25%; }
     }
 `;
