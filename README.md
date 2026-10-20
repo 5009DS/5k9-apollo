@@ -100,6 +100,21 @@ O `Sistema/vercel.json` devolve `index.html` para qualquer rota, o mesmo que o
 servidor local faz. O domínio previsto é `apollo.5k9.studio`, o que o
 trocador de ferramentas já usa.
 
+### Ligar o domínio (GoDaddy)
+
+1. Na Vercel, projeto `5k9-apollo` → **Settings → Domains** → adicionar
+   `apollo.5k9.studio`. A Vercel mostra o registro DNS que espera.
+2. Na GoDaddy, **Meus produtos → 5k9.studio → DNS → Adicionar registro**:
+   tipo `CNAME`, nome `apollo`, valor o que a Vercel mostrou
+   (normalmente `cname.vercel-dns.com`), TTL padrão.
+3. Voltar à Vercel e esperar o domínio ficar **Valid Configuration**. O
+   certificado HTTPS sai sozinho.
+
+O subdomínio precisa ser exatamente `apollo`: o trocador monta o endereço de
+cada ferramenta trocando o primeiro rótulo do domínio atual
+(`chronos.5k9.studio` → `apollo.5k9.studio`). Com outro nome, o menu das
+outras ferramentas aponta para um endereço que não existe.
+
 **Enquanto não houver banco, o site publicado também é modo local.** Cada
 navegador que abrir o endereço tem os próprios projetos e fotos, guardados
 só nele. Serve para a equipe testar em qualquer máquina; o link de um cliente
