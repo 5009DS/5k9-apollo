@@ -58,7 +58,10 @@ const paragrafos = (texto) => String(texto || '').trim().split(/\n\s*\n/).filter
 
 /* A imagem resolvida, ou o aviso da prévia. O src é pintado depois
    (pintarImagens), porque o endereço sai do IndexedDB de forma assíncrona. */
-const imgHTML = (img, { classe = '', grande = true, alt = '' } = {}) => {
+/* `proporcao`: a caixa já nasce com a proporção da imagem. Sem isto, imagem
+   com largura automática tem zero de altura até carregar, e a página pula
+   quando ela chega. */
+const imgHTML = (img, { classe = '', grande = true, alt = '', estilo = '', proporcao = false } = {}) => {
     if (!img) return '';
     if (img.bloqueada) {
         return `<div class="apr-buraco ${classe}"><span>Sem autorização de imagem — o cliente não vê
@@ -66,7 +69,13 @@ const imgHTML = (img, { classe = '', grande = true, alt = '' } = {}) => {
     }
     if (img.faltando) return `<div class="apr-buraco ${classe}"><span>Imagem removida</span></div>`;
     const chave = grande ? img.proxy_chave : (img.capa_chave || img.proxy_chave);
-    return `<img class="${classe}" data-chave="${esc(chave)}" alt="${esc(alt)}"
+    if (proporcao && img.largura && img.altura) {
+        // Largura = a menor entre a coluna e "85% da tela × proporção": a
+        // altura que sai disso nunca passa do teto, nem antes de carregar.
+        const r = `${img.largura} / ${img.altura}`;
+        estilo = `${estilo}; aspect-ratio: ${r}; height: auto; width: min(100%, calc(85svh * ${r}))`;
+    }
+    return `<img class="${classe}" data-chave="${esc(chave)}" alt="${esc(alt)}" ${estilo ? `style="${estilo}"` : ''}
                  width="${Number(img.largura) || 1600}" height="${Number(img.altura) || 1000}" loading="lazy">`;
 };
 
@@ -98,21 +107,33 @@ const fundoDoLogo = (item) => {
     return { fundo: 'var(--paper)', texto: 'var(--ink)' };
 };
 
+/* Quando a imagem precisa ser cortada para caber (a capa em tela cheia, a
+   imagem de ponta a ponta), a equipe escolhe o que fica: um rosto no alto de
+   um retrato não pode ser cortado porque o centro foi o padrão. */
+const ENQUADRAMENTOS = [
+    { valor: 'centro', rotulo: 'Centro' },
+    { valor: 'topo',   rotulo: 'Parte de cima' },
+    { valor: 'base',   rotulo: 'Parte de baixo' },
+];
+const posicao = (v) => `object-position: center ${v === 'topo' ? 'top' : v === 'base' ? 'bottom' : 'center'}`;
+
 export const BLOCOS = {
     capa: {
         rotulo: 'Capa', icone: 'panel-top',
         descricao: 'Imagem em tela cheia, com o título.',
-        padrao: (ctx) => ({ titulo: ctx?.projeto?.nome || 'Identidade visual', subtitulo: '', imagem: null }),
+        padrao: (ctx) => ({ titulo: ctx?.projeto?.nome || 'Identidade visual', subtitulo: '', imagem: null, enquadramento: 'centro' }),
         campos: [
             { nome: 'imagem', rotulo: 'Imagem de fundo', tipo: 'imagem',
               dica: 'Sem imagem, a capa usa a cor de destaque.' },
+            { nome: 'enquadramento', rotulo: 'O que fica visível', tipo: 'escolha', opcoes: ENQUADRAMENTOS,
+              dica: 'A capa ocupa a tela inteira e corta as bordas — no celular, em pé, corta as laterais.' },
             { nome: 'titulo', rotulo: 'Título', tipo: 'texto' },
             { nome: 'subtitulo', rotulo: 'Subtítulo', tipo: 'texto' },
         ],
         resumo: (d) => d.titulo,
         desenhar: (d, ctx) => `
             <section class="apr-capa ${d.imagem && !d.imagem.bloqueada && !d.imagem.faltando ? 'tem-imagem' : ''}">
-                <div class="apr-capa__fundo">${imgHTML(d.imagem, { classe: 'apr-capa__img' })}</div>
+                <div class="apr-capa__fundo">${imgHTML(d.imagem, { classe: 'apr-capa__img', estilo: posicao(d.enquadramento) })}</div>
                 <div class="apr-capa__texto">
                     <span class="apr-capa__cliente">${esc(ctx.cliente?.nome || '')}</span>
                     <h1 class="apr-capa__titulo">${esc(d.titulo || '')}</h1>
@@ -293,16 +314,25 @@ export const BLOCOS = {
         rotulo: 'Aplicações', icone: 'layout-grid',
         descricao: 'Mockups: cartão, fachada, redes, uniforme.',
         numerada: true,
-        padrao: () => ({ rotulo: 'Aplicações', titulo: '', texto: '', itens: [] }),
+        padrao: () => ({ rotulo: 'Aplicações', titulo: '', texto: '', disposicao: 'mosaico', itens: [] }),
         campos: [
             { nome: 'rotulo', rotulo: 'Rótulo da seção', tipo: 'texto', placeholder: 'Aplicações' },
             { nome: 'titulo', rotulo: 'Título', tipo: 'texto' },
             { nome: 'texto', rotulo: 'Texto', tipo: 'area' },
+            /* Mockup chega em toda proporção — 16:9, retrato, quadrado. O
+               mosaico respeita cada uma e encaixa as colunas; a grade iguala
+               as alturas cortando um pouco das bordas. */
+            { nome: 'disposicao', rotulo: 'Disposição', tipo: 'escolha', opcoes: [
+                { valor: 'mosaico', rotulo: 'Mosaico — cada imagem inteira, na proporção dela' },
+                { valor: 'grade',   rotulo: 'Grade — mesma altura, corta um pouco das bordas' },
+            ] },
             { nome: 'itens', rotulo: 'Aplicações', tipo: 'lista', rotuloItem: 'aplicação',
-              novo: () => ({ imagem: null, legenda: '' }),
+              novo: () => ({ imagem: null, legenda: '', destaque: false }),
               campos: [
                   { nome: 'imagem', rotulo: 'Imagem', tipo: 'imagem' },
                   { nome: 'legenda', rotulo: 'Legenda', tipo: 'texto', placeholder: 'Cartão de visita' },
+                  { nome: 'destaque', rotulo: 'Ocupar a linha inteira', tipo: 'sim',
+                    dica: 'Sozinha, na largura toda — sem passar da altura da tela.' },
               ] },
         ],
         resumo: (d) => `${(d.itens || []).length} aplicação(ões)`,
@@ -311,17 +341,7 @@ export const BLOCOS = {
                 <div class="apr-largura">
                     ${cabecaSecao(d, ctx)}
                     ${d.texto ? `<div class="apr-lead">${paragrafos(d.texto)}</div>` : ''}
-                    <div class="apr-apl__grade">
-                        ${(d.itens || []).map((item, i) => {
-                            const img = imgHTML(item.imagem, { alt: item.legenda });
-                            if (!img && !ctx.previa) return '';
-                            return `
-                                <figure class="apr-apl__item ${i === 0 ? 'is-principal' : ''}">
-                                    ${img || vazio('Escolha a imagem.', ctx)}
-                                    ${item.legenda ? `<figcaption>${esc(item.legenda)}</figcaption>` : ''}
-                                </figure>`;
-                        }).join('') || vazio('Adicione as aplicações.', ctx)}
-                    </div>
+                    ${aplicacoesHTML(d, ctx) || vazio('Adicione as aplicações.', ctx)}
                 </div>
             </section>`,
     },
@@ -329,18 +349,19 @@ export const BLOCOS = {
     imagem: {
         rotulo: 'Imagem', icone: 'image',
         descricao: 'Uma imagem inteira, sem moldura.',
-        padrao: () => ({ imagem: null, legenda: '', largura: 'inteira' }),
+        padrao: () => ({ imagem: null, legenda: '', largura: 'inteira', enquadramento: 'centro' }),
         campos: [
             { nome: 'imagem', rotulo: 'Imagem', tipo: 'imagem' },
             { nome: 'largura', rotulo: 'Largura', tipo: 'escolha', opcoes: [
                 { valor: 'inteira', rotulo: 'De ponta a ponta' },
                 { valor: 'margem', rotulo: 'Com margem' },
-            ] },
+            ], dica: 'De ponta a ponta, imagem mais alta que a tela é cortada; com margem, ela cabe inteira.' },
+            { nome: 'enquadramento', rotulo: 'O que fica visível no corte', tipo: 'escolha', opcoes: ENQUADRAMENTOS },
             { nome: 'legenda', rotulo: 'Legenda', tipo: 'texto' },
         ],
         resumo: (d) => d.legenda || (d.largura === 'margem' ? 'com margem' : 'de ponta a ponta'),
         desenhar: (d, ctx) => {
-            const img = imgHTML(d.imagem, { alt: d.legenda });
+            const img = imgHTML(d.imagem, { alt: d.legenda, estilo: posicao(d.enquadramento), proporcao: d.largura === 'margem' });
             if (!img && !ctx.previa) return '';
             return `
                 <section class="apr-imagem apr-imagem--${d.largura === 'margem' ? 'margem' : 'inteira'}">
@@ -422,6 +443,33 @@ export const BLOCOS = {
             </section>`,
     },
 };
+
+/* As aplicações em trechos: cada item em destaque é uma linha sozinha, e os
+   outros seguidos formam um mosaico ou uma grade entre eles — a ordem que a
+   equipe montou é a ordem que o cliente lê. */
+function aplicacoesHTML(d, ctx) {
+    const disposicao = d.disposicao === 'grade' ? 'grade' : 'mosaico';
+    const trechos = [];
+    let corrente = [];
+    const fechar = () => { if (corrente.length) trechos.push({ grupo: corrente }); corrente = []; };
+
+    for (const item of d.itens || []) {
+        const img = imgHTML(item.imagem, { alt: item.legenda, proporcao: !!item.destaque });
+        if (!img && !ctx.previa) continue;
+        const figura = `
+            <figure class="apr-apl__item">
+                ${img || vazio('Escolha a imagem.', ctx)}
+                ${item.legenda ? `<figcaption>${esc(item.legenda)}</figcaption>` : ''}
+            </figure>`;
+        if (item.destaque) { fechar(); trechos.push({ destaque: figura }); }
+        else corrente.push(figura);
+    }
+    fechar();
+
+    return trechos.map(t => t.destaque
+        ? `<div class="apr-apl__destaque">${t.destaque}</div>`
+        : `<div class="apr-apl__${disposicao}">${t.grupo.join('')}</div>`).join('');
+}
 
 /** Os tipos que a equipe pode adicionar, na ordem do menu. */
 export const ADICIONAVEIS = ['capa', 'texto', 'logo', 'paleta', 'tipografia', 'aplicacoes', 'imagem', 'antes_depois'];
@@ -636,13 +684,33 @@ export const ESTILOS_BLOCOS = `
     .apr-tipo__imagem img { width: 100%; height: auto; display: block; border-radius: var(--radius-md); }
 
     /* ── Aplicações ───────────────────────────────────────────────────── */
-    .apr-apl__grade { display: grid; grid-template-columns: 1fr; gap: var(--space-3); }
+    .apr-apl { --apr-vao: var(--space-3); }
+    .apr-apl .apr-largura > div + div { margin-top: var(--apr-vao); }
     .apr-apl__item { margin: 0; }
     .apr-apl__item img { width: 100%; height: auto; display: block; border-radius: var(--radius-lg); background: var(--surface-2); }
 
+    /* Mosaico: colunas que se encaixam, cada imagem na proporção dela. */
+    .apr-apl__mosaico { columns: 1; column-gap: var(--apr-vao); }
+    .apr-apl__mosaico .apr-apl__item { break-inside: avoid; margin-bottom: var(--apr-vao); }
+    .apr-apl__mosaico .apr-apl__item:last-child { margin-bottom: 0; }
+
+    /* Grade: mesma altura, a imagem preenche e corta as bordas. */
+    .apr-apl__grade { display: grid; grid-template-columns: 1fr; gap: var(--apr-vao); }
+    .apr-apl__grade .apr-apl__item img { aspect-ratio: 4 / 3; object-fit: cover; }
+
+    /* Destaque: a linha inteira, mas nunca mais alta que a tela — um
+       quadrado de 1080 não vira uma parede de 1200 px. */
+    .apr-apl__destaque .apr-apl__item { display: flex; flex-direction: column; align-items: center; }
+    .apr-apl__destaque .apr-apl__item img { width: auto; max-width: 100%; max-height: 85svh; }
+
     /* ── Imagem inteira ───────────────────────────────────────────────── */
     .apr-imagem figure { margin: 0; }
+    /* Teto de altura: de ponta a ponta, imagem mais alta que a tela é
+       cortada no enquadramento escolhido; com margem, ela encolhe inteira. */
     .apr-imagem img { width: 100%; height: auto; display: block; }
+    .apr-imagem--inteira img { max-height: 90svh; object-fit: cover; }
+    .apr-imagem--margem figure { display: flex; flex-direction: column; align-items: center; }
+    .apr-imagem--margem img { width: auto; max-width: 100%; max-height: 85svh; }
     .apr-imagem figcaption { padding: 0 var(--space-5); }
     .apr-imagem--margem { padding: clamp(32px, 6vw, 80px) var(--space-5); }
     .apr-imagem--margem figure { max-width: 1200px; margin: 0 auto; }
@@ -693,8 +761,9 @@ export const ESTILOS_BLOCOS = `
         .apr-paleta__grade { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
         .apr-copiar span { font-size: var(--text-xs); }
         .apr-copiar b { font-size: var(--text-sm); }
-        .apr-apl__grade { grid-template-columns: repeat(2, 1fr); gap: var(--space-4); }
-        .apr-apl__item.is-principal { grid-column: 1 / -1; }
+        .apr-apl { --apr-vao: var(--space-4); }
+        .apr-apl__mosaico { columns: 2; }
+        .apr-apl__grade { grid-template-columns: repeat(2, 1fr); }
         .apr-tipo__fonte { grid-template-columns: minmax(180px, 1fr) 3fr; align-items: start; }
     }
     @media (min-width: 1024px) {
