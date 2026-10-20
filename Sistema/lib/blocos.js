@@ -193,7 +193,7 @@ export const BLOCOS = {
                         ${(d.itens || []).map((item, i) => {
                             const f = fundoDoLogo(item);
                             return `
-                                <figure class="apr-logo__item ${i === 0 ? 'is-principal' : ''}"
+                                <figure class="apr-logo__item ${linhaInteira(i, (d.itens || []).length) ? 'is-principal' : ''}"
                                         style="--logo-fundo:${f.fundo}; --logo-texto:${f.texto}">
                                     <div class="apr-logo__palco">${imgHTML(item.imagem, { classe: 'apr-logo__img', alt: item.legenda })
                                         || vazio('Escolha o arquivo da marca.', ctx)}</div>
@@ -444,31 +444,57 @@ export const BLOCOS = {
     },
 };
 
+/* ── NENHUMA IMAGEM SOZINHA EM COLUNA DUPLA ────────────────────────────
+   Em duas colunas, toda imagem tem companheira ao lado, com a base
+   alinhada. A que sobra — a terceira de três, a quinta de cinco — não fica
+   embaixo com um buraco ao lado: ocupa a linha inteira. É a regra que o
+   bloco de logo já seguia com a versão principal, agora para todo mundo. */
+const linhaInteira = (i, total) => i === 0 || (i === total - 1 && (total - 1) % 2 === 1);
+
 /* As aplicações em trechos: cada item em destaque é uma linha sozinha, e os
-   outros seguidos formam um mosaico ou uma grade entre eles — a ordem que a
-   equipe montou é a ordem que o cliente lê. */
+   outros seguidos andam de dois em dois — a ordem que a equipe montou é a
+   ordem que o cliente lê.
+
+   Mosaico: o par divide a largura NA PROPORÇÃO das duas imagens, e as duas
+   saem com a mesma altura, inteiras, sem corte. Grade: o par é 4:3 e corta
+   as bordas. Nos dois, a que sobra no fim de um trecho vira linha inteira. */
 function aplicacoesHTML(d, ctx) {
     const disposicao = d.disposicao === 'grade' ? 'grade' : 'mosaico';
     const trechos = [];
     let corrente = [];
-    const fechar = () => { if (corrente.length) trechos.push({ grupo: corrente }); corrente = []; };
+    const fechar = () => { if (corrente.length) trechos.push(corrente); corrente = []; };
 
     for (const item of d.itens || []) {
-        const img = imgHTML(item.imagem, { alt: item.legenda, proporcao: !!item.destaque });
-        if (!img && !ctx.previa) continue;
-        const figura = `
-            <figure class="apr-apl__item">
-                ${img || vazio('Escolha a imagem.', ctx)}
-                ${item.legenda ? `<figcaption>${esc(item.legenda)}</figcaption>` : ''}
-            </figure>`;
-        if (item.destaque) { fechar(); trechos.push({ destaque: figura }); }
-        else corrente.push(figura);
+        const usavel = item.imagem && !item.imagem.bloqueada && !item.imagem.faltando;
+        if (!usavel && !imgHTML(item.imagem) && !ctx.previa) continue;
+        const entrada = {
+            item,
+            razao: usavel && item.imagem.largura && item.imagem.altura ? item.imagem.largura / item.imagem.altura : 4 / 3,
+        };
+        if (item.destaque) { fechar(); trechos.push([{ ...entrada, sozinha: true }]); }
+        else corrente.push(entrada);
     }
     fechar();
 
-    return trechos.map(t => t.destaque
-        ? `<div class="apr-apl__destaque">${t.destaque}</div>`
-        : `<div class="apr-apl__${disposicao}">${t.grupo.join('')}</div>`).join('');
+    const figura = ({ item }, { sozinha = false, estilo = '' } = {}) => `
+        <figure class="apr-apl__item" ${estilo ? `style="${estilo}"` : ''}>
+            ${imgHTML(item.imagem, { alt: item.legenda, proporcao: sozinha }) || vazio('Escolha a imagem.', ctx)}
+            ${item.legenda ? `<figcaption>${esc(item.legenda)}</figcaption>` : ''}
+        </figure>`;
+    const sozinhaHTML = (e) => `<div class="apr-apl__destaque">${figura(e, { sozinha: true })}</div>`;
+
+    const linhas = [];
+    for (const trecho of trechos) {
+        for (let i = 0; i < trecho.length; i += 2) {
+            const [a, b] = [trecho[i], trecho[i + 1]];
+            if (!b || a.sozinha) { linhas.push(sozinhaHTML(a)); continue; }
+            linhas.push(disposicao === 'grade'
+                ? `<div class="apr-apl__grade">${figura(a)}${figura(b)}</div>`
+                // flex-grow na proporção: larguras proporcionais = alturas iguais.
+                : `<div class="apr-apl__par">${figura(a, { estilo: `--r: ${a.razao.toFixed(4)}` })}${figura(b, { estilo: `--r: ${b.razao.toFixed(4)}` })}</div>`);
+        }
+    }
+    return linhas.join('');
 }
 
 /** Os tipos que a equipe pode adicionar, na ordem do menu. */
@@ -689,10 +715,10 @@ export const ESTILOS_BLOCOS = `
     .apr-apl__item { margin: 0; }
     .apr-apl__item img { width: 100%; height: auto; display: block; border-radius: var(--radius-lg); background: var(--surface-2); }
 
-    /* Mosaico: colunas que se encaixam, cada imagem na proporção dela. */
-    .apr-apl__mosaico { columns: 1; column-gap: var(--apr-vao); }
-    .apr-apl__mosaico .apr-apl__item { break-inside: avoid; margin-bottom: var(--apr-vao); }
-    .apr-apl__mosaico .apr-apl__item:last-child { margin-bottom: 0; }
+    /* Mosaico: o par lado a lado, cada imagem inteira e as duas com a mesma
+       altura. No celular, uma por linha. */
+    .apr-apl__par { display: flex; flex-direction: column; gap: var(--apr-vao); }
+    .apr-apl__par .apr-apl__item { min-width: 0; }
 
     /* Grade: mesma altura, a imagem preenche e corta as bordas. */
     .apr-apl__grade { display: grid; grid-template-columns: 1fr; gap: var(--apr-vao); }
@@ -762,7 +788,8 @@ export const ESTILOS_BLOCOS = `
         .apr-copiar span { font-size: var(--text-xs); }
         .apr-copiar b { font-size: var(--text-sm); }
         .apr-apl { --apr-vao: var(--space-4); }
-        .apr-apl__mosaico { columns: 2; }
+        .apr-apl__par { flex-direction: row; align-items: flex-start; }
+        .apr-apl__par .apr-apl__item { flex: var(--r) 1 0; }
         .apr-apl__grade { grid-template-columns: repeat(2, 1fr); }
         .apr-tipo__fonte { grid-template-columns: minmax(180px, 1fr) 3fr; align-items: start; }
     }
