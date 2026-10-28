@@ -442,7 +442,7 @@ const abrirFicha = (ctx, pecaId, redesenhar) => {
         subtitulo: esc(peca.titulo),
         topo: `
             <div class="gl-ficha">
-                <img class="gl-ficha__img" data-chave="${esc(v.proxy_chave)}" alt=""
+                <img class="gl-ficha__img" data-chave="${esc(peca.tipo === 'video' ? v.capa_chave : v.proxy_chave)}" alt=""
                      width="${v.largura}" height="${v.altura}">
                 <dl class="gl-ficha__dados">
                     <div><dt>Original</dt><dd>${numero(v.largura)} × ${numero(v.altura)} px · ${tamanho(v.bytes)}</dd></div>

@@ -29,7 +29,7 @@
 
 import { local, consentimentoValido, modeloDe } from './db/local.js';
 import { midia } from './lib/midia.js';
-import { prepararFoto, extensaoDe } from './lib/fotos.js';
+import { prepararFoto, prepararVideo, extensaoDe } from './lib/fotos.js';
 import { semExtensao } from './lib/formato.js';
 import { entradaDaEquipe } from './lib/conversa.js';
 
@@ -147,6 +147,45 @@ export const store = {
                 fps_num: null, fps_den: null, duracao_quadros: null, tc_inicial: null,
                 largura: preparado.largura, altura: preparado.altura, bytes: preparado.bytes,
                 marca_dagua: marca, enviado_por: null, notas: null,
+            });
+            return { peca, versao };
+        } catch (e) {
+            await midia.apagar(Object.values(chaves));
+            throw e;
+        }
+    },
+
+    /**
+     * Um vídeo curto de apresentação, pelo mesmo caminho da foto: arquivo
+     * primeiro, linha depois. O proxy é o próprio arquivo — no modo local
+     * não há transcodificação, e só entra formato que o navegador toca.
+     */
+    enviarVideo: async (projetoId, arquivo, ordem = 0) => {
+        const preparado = await prepararVideo(arquivo);
+        const pecaId = crypto.randomUUID();
+        const ext = arquivo.type === 'video/webm' ? 'webm' : 'mp4';
+        const chaves = {
+            master_chave: `master/${pecaId}/v1/${arquivo.name}`,
+            proxy_chave:  `proxy/${pecaId}/v1.${ext}`,
+            capa_chave:   `proxy/${pecaId}/v1-capa.jpg`,
+        };
+
+        await midia.guardar(chaves.master_chave, arquivo);
+        await midia.guardar(chaves.proxy_chave, arquivo);
+        await midia.guardar(chaves.capa_chave, preparado.capa);
+
+        try {
+            const peca = await store.pecas.salvar({
+                id: pecaId, projeto_id: projetoId, pasta_id: null, tipo: 'video',
+                titulo: semExtensao(arquivo.name), status: 'a_revisar', etiquetas: [],
+                responsavel: null, prazo: null, ordem, arquivado_em: null,
+            });
+            const versao = await store.versoes.salvar({
+                peca_id: pecaId, numero: 1, ...chaves,
+                hls_prefixo: null, tira_chave: null, onda_chave: null,
+                fps_num: null, fps_den: null, duracao_quadros: null, tc_inicial: null,
+                largura: preparado.largura, altura: preparado.altura, bytes: preparado.bytes,
+                marca_dagua: false, enviado_por: null, notas: null,
             });
             return { peca, versao };
         } catch (e) {

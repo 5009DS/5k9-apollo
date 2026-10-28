@@ -157,6 +157,7 @@ bilhete, ZIP) e o deploy na Vercel. Vídeo começa na Etapa 2.
 | Resposta da equipe no fio, com a regra de estado copiada do Chronos | `lib/conversa.js` |
 | "Sem pessoa identificável" como motivo de consentimento | `pages/galeria.js`, `pages/pagina.js` |
 | PNG transparente e SVG viram PNG; apresentação sem marca d'água | `lib/fotos.js`, `store.js` |
+| Bloco de vídeo curto (vinheta, animação do logo): em loop, mudo e tocando sozinho; largura Slide para sequência de telas | `lib/blocos.js`, `store.enviarVideo` |
 
 Ainda não: `entrega` e `revisao`, comentar por bloco e o kit da marca para
 baixar depois de aprovado (precisa do Worker).

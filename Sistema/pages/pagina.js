@@ -4,7 +4,7 @@ import { abrirMenu } from '../components/menu.js';
 import { openDrawer, closeDrawer } from '../components/drawer.js';
 import { toast } from '../components/toast.js';
 import { midia } from '../lib/midia.js';
-import { ACEITOS } from '../lib/fotos.js';
+import { ACEITOS, VIDEOS } from '../lib/fotos.js';
 import { conversas, ato, daEquipe, estadoMeta } from '../lib/conversa.js';
 import { esc, haQuanto, plural } from '../lib/formato.js';
 import { vazioHTML, caminhoDoCliente } from '../lib/pecas.js';
@@ -518,7 +518,7 @@ const desenharEditor = (ctx) => {
             return escolherImagem(ed, (pecaId) => {
                 gravarCaminho(dados, b.dataset.escolherImagem, pecaId ? { peca: pecaId } : null);
                 gravar({ redesenharEditor: true });
-            });
+            }, { video: 'video' in b.dataset });
         }
         if (b.dataset.tirarImagem) {
             gravarCaminho(dados, b.dataset.tirarImagem, null);
@@ -601,6 +601,8 @@ const campoHTML = (c, valor, caminho, dono, ed) => {
                 <span>${esc(c.rotulo)}</span></label>${dica(c)}`;
         case 'imagem':
             return imagemHTML(c, valor, caminho, ed);
+        case 'video':
+            return imagemHTML(c, valor, caminho, ed, { video: true });
         case 'fonte': {
             const dono_ = caminho.split('.').slice(0, -1).join('.');
             return `<div class="pg-campo">${rotulo(c)}
@@ -642,17 +644,18 @@ const campoHTML = (c, valor, caminho, dono, ed) => {
 
 /* O campo de imagem mostra a escolhida e, se ela não tem autorização, diz
    na hora — com o gesto de "sem pessoa" ao alcance, porque é o caso comum
-   aqui: mockup e logo não têm ninguém para assinar termo. */
-const imagemHTML = (c, valor, caminho, ed) => {
+   aqui: mockup e logo não têm ninguém para assinar termo. O campo de vídeo
+   é o mesmo, com a biblioteca mostrando só os vídeos. */
+const imagemHTML = (c, valor, caminho, ed, { video = false } = {}) => {
     const pecaId = valor?.peca || null;
     const peca = pecaId ? ed.pecas.get(pecaId) : null;
     const v = pecaId ? ed.versoes.get(pecaId) : null;
     const liberada = pecaId && consentimentoValido(ed.consent.get(pecaId));
     return `<div class="pg-campo">${rotulo(c)}
         <div class="pg-imagem">
-            <span class="pg-imagem__mini">${v ? `<img data-chave="${esc(v.capa_chave)}" alt="">` : '<i data-lucide="image"></i>'}</span>
-            <span class="pg-imagem__nome">${peca ? esc(peca.titulo) : pecaId ? 'Imagem removida' : 'Nenhuma'}</span>
-            <button class="ds-btn ds-btn--ghost ds-btn--sm" data-escolher-imagem="${caminho}">${pecaId ? 'Trocar' : 'Escolher'}</button>
+            <span class="pg-imagem__mini">${v ? `<img data-chave="${esc(v.capa_chave)}" alt="">` : `<i data-lucide="${video ? 'film' : 'image'}"></i>`}</span>
+            <span class="pg-imagem__nome">${peca ? esc(peca.titulo) : pecaId ? (video ? 'Vídeo removido' : 'Imagem removida') : 'Nenhum' + (video ? '' : 'a')}</span>
+            <button class="ds-btn ds-btn--ghost ds-btn--sm" data-escolher-imagem="${caminho}" ${video ? 'data-video' : ''}>${pecaId ? 'Trocar' : 'Escolher'}</button>
             ${pecaId ? `<button class="pg-mini" data-tirar-imagem="${caminho}" aria-label="Tirar a imagem"><i data-lucide="x"></i></button>` : ''}
         </div>
         ${peca && !liberada ? `
@@ -675,13 +678,14 @@ const pintarMiniaturas = (raiz) => {
 
 /* A biblioteca de imagens do projeto, num painel: escolher uma, ou enviar
    mais sem sair da página. As imagens são peças do projeto — é isso que
-   mantém consentimento e original sem endereço valendo (README). */
-const escolherImagem = (ed, aoEscolher) => {
+   mantém consentimento e original sem endereço valendo (README). Com
+   `video`, a mesma biblioteca lista e recebe só vídeos. */
+const escolherImagem = (ed, aoEscolher, { video = false } = {}) => {
     const montar = async () => {
         const [pecas, versoes, consent] = await Promise.all([
             store.pecas.listar(), store.versoes.listar(), store.consentimentos.listar(),
         ]);
-        const doProjeto = pecas.filter(p => p.projeto_id === ed.ctx.projeto.id);
+        const doProjeto = pecas.filter(p => p.projeto_id === ed.ctx.projeto.id && (p.tipo === 'video') === video);
         const v = new Map(versoes.map(x => [x.peca_id, x]));
         const c = new Map(consent.map(x => [x.peca_id, x]));
         return doProjeto.filter(p => v.has(p.id))
@@ -697,20 +701,22 @@ const escolherImagem = (ed, aoEscolher) => {
                     <span>${esc(p.titulo)}</span>
                     ${ok ? '' : '<em><i data-lucide="shield-alert"></i></em>'}
                 </button>`).join('')}
-        </div>` : vazioHTML('image-up', 'Nenhuma imagem neste projeto', 'Envie os arquivos da marca e os mockups.');
+        </div>` : video
+            ? vazioHTML('film', 'Nenhum vídeo neste projeto', 'Envie a animação em MP4 ou WebM.')
+            : vazioHTML('image-up', 'Nenhuma imagem neste projeto', 'Envie os arquivos da marca e os mockups.');
 
     const painelHTML = async () => `
         <label class="ds-btn ds-btn--ghost ds-btn--sm pg-biblio__enviar">
-            <i data-lucide="upload"></i> Enviar imagens
-            <input type="file" multiple accept="${ACEITOS.join(',')}" hidden data-enviar>
+            <i data-lucide="upload"></i> ${video ? 'Enviar vídeos' : 'Enviar imagens'}
+            <input type="file" multiple accept="${(video ? VIDEOS : ACEITOS).join(',')}" hidden data-enviar>
         </label>
         <p class="pg-biblio__progresso" hidden></p>
         <div data-lista>${corpo(await montar())}</div>`;
 
     (async () => {
         const painel = openDrawer({
-            title: 'Escolher imagem',
-            subtitle: 'Imagens deste projeto · o escudo marca as sem autorização',
+            title: video ? 'Escolher vídeo' : 'Escolher imagem',
+            subtitle: `${video ? 'Vídeos' : 'Imagens'} deste projeto · o escudo marca os sem autorização`,
             body: await painelHTML(),
             footer: '<button class="ds-btn ds-btn--ghost" data-dw-close>Fechar</button>',
         });
@@ -734,10 +740,11 @@ const escolherImagem = (ed, aoEscolher) => {
             for (const [i, arquivo] of arquivos.entries()) {
                 progresso.hidden = false;
                 progresso.textContent = `Preparando ${i + 1} de ${arquivos.length} — ${arquivo.name}`;
-                try { await store.enviarFoto(ed.ctx.projeto.id, arquivo, 0); }
+                try { await (video ? store.enviarVideo : store.enviarFoto)(ed.ctx.projeto.id, arquivo, 0); }
                 catch (e) { erros.push(e.message); }
             }
-            progresso.textContent = erros.length ? erros.join(' · ') : `${plural(arquivos.length, 'imagem enviada', 'imagens enviadas')}.`;
+            progresso.textContent = erros.length ? erros.join(' · ')
+                : `${video ? plural(arquivos.length, 'vídeo enviado', 'vídeos enviados') : plural(arquivos.length, 'imagem enviada', 'imagens enviadas')}.`;
             ed.ctx.t = await store.tudo();
             painel.querySelector('[data-lista]').innerHTML = corpo(await montar());
             ligar();

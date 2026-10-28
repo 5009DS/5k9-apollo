@@ -193,3 +193,43 @@ export const prepararFoto = async (arquivo, { marca = true } = {}) => {
         fonte.fechar();
     }
 };
+
+/* Vídeo curto de apresentação — a animação do logo, uma vinheta. Não é o
+   vídeo da revisão (Etapa 2, HLS e quadro a quadro): é um arquivo que o
+   navegador toca direto, então só entra o que todo navegador toca. */
+export const VIDEOS = ['video/mp4', 'video/webm'];
+
+/**
+ * Prepara um vídeo curto: o arquivo segue como está, e sai dele a capa — o
+ * quadro que aparece antes de tocar e na miniatura da biblioteca.
+ *
+ * @param {File} arquivo
+ * @returns {Promise<{largura:number, altura:number, bytes:number, capa:Blob}>}
+ */
+export const prepararVideo = async (arquivo) => {
+    if (!VIDEOS.includes(arquivo.type)) {
+        throw new Error(`${arquivo.name}: envie o vídeo em MP4 (H.264) ou WebM — é o que todo navegador toca.`);
+    }
+    const url = URL.createObjectURL(arquivo);
+    const video = Object.assign(document.createElement('video'), { muted: true, playsInline: true, preload: 'auto', src: url });
+    try {
+        await new Promise((ok, falha) => {
+            video.onloadeddata = ok;
+            video.onerror = () => falha(new Error(`${arquivo.name}: o navegador não conseguiu abrir este vídeo.`));
+        });
+        // Animação costuma nascer do fundo vazio: o primeiro quadro seria uma
+        // capa em branco. Meio segundo adiante já há o que mostrar.
+        video.currentTime = Math.min(0.5, (video.duration || 0) / 2);
+        await new Promise(ok => { video.onseeked = ok; });
+        const bitmap = await createImageBitmap(video);
+        const fonte = { imagem: bitmap, largura: video.videoWidth, altura: video.videoHeight, fechar: () => bitmap.close() };
+        try {
+            const capa = await derivar(fonte, LADO_PROXY, false, 'image/jpeg');
+            return { largura: fonte.largura, altura: fonte.altura, bytes: arquivo.size, capa };
+        } finally {
+            fonte.fechar();
+        }
+    } finally {
+        URL.revokeObjectURL(url);
+    }
+};

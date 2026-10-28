@@ -145,7 +145,7 @@ const resolvedor = ({ previa }) => {
             // havia uma imagem ali.
             return previa ? { bloqueada: true, peca: id, titulo: peca.titulo } : null;
         }
-        return { peca: id, proxy_chave: v.proxy_chave, capa_chave: v.capa_chave,
+        return { peca: id, tipo: peca.tipo, proxy_chave: v.proxy_chave, capa_chave: v.capa_chave,
                  largura: v.largura, altura: v.altura };
     };
 

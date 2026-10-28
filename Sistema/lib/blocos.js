@@ -69,14 +69,34 @@ const imgHTML = (img, { classe = '', grande = true, alt = '', estilo = '', propo
     }
     if (img.faltando) return `<div class="apr-buraco ${classe}"><span>Imagem removida</span></div>`;
     const chave = grande ? img.proxy_chave : (img.capa_chave || img.proxy_chave);
-    if (proporcao && img.largura && img.altura) {
-        // Largura = a menor entre a coluna e "teto da tela × proporção": a
-        // altura que sai disso nunca passa do teto, nem antes de carregar.
-        const r = `${img.largura} / ${img.altura}`;
-        estilo = `${estilo}; aspect-ratio: ${r}; height: auto; width: min(100%, calc(${teto}svh * ${r}))`;
-    }
+    if (proporcao) estilo = proporcional(estilo, img, teto);
     return `<img class="${classe}" data-chave="${esc(chave)}" alt="${esc(alt)}" ${estilo ? `style="${estilo}"` : ''}
                  width="${Number(img.largura) || 1600}" height="${Number(img.altura) || 1000}" loading="lazy">`;
+};
+
+// Largura = a menor entre a coluna e "teto da tela × proporção": a altura que
+// sai disso nunca passa do teto, nem antes de carregar.
+const proporcional = (estilo, m, teto) => {
+    if (!m.largura || !m.altura) return estilo;
+    const r = `${m.largura} / ${m.altura}`;
+    return `${estilo}; aspect-ratio: ${r}; height: auto; width: min(100%, calc(${teto}svh * ${r}))`;
+};
+
+/* O vídeo do bloco de vídeo: mudo, em loop e tocando sozinho — é vinheta,
+   não conteúdo para assistir com som. O src e a capa são pintados depois,
+   como na imagem (pintarMidia). */
+const videoHTML = (v, { alt = '', proporcao = false, teto = 85 } = {}) => {
+    if (!v) return '';
+    if (v.bloqueada) {
+        return `<div class="apr-buraco"><span>Sem autorização de imagem — o cliente não vê
+                <b>${esc(v.titulo || '')}</b></span></div>`;
+    }
+    if (v.faltando) return '<div class="apr-buraco"><span>Vídeo removido</span></div>';
+    const estilo = proporcao ? proporcional('', v, teto) : '';
+    return `<video data-chave="${esc(v.proxy_chave)}" data-capa="${esc(v.capa_chave || '')}"
+                   ${alt ? `aria-label="${esc(alt)}"` : ''} ${estilo ? `style="${estilo}"` : ''}
+                   width="${Number(v.largura) || 1600}" height="${Number(v.altura) || 900}"
+                   muted loop playsinline autoplay preload="metadata"></video>`;
 };
 
 const cabecaSecao = (d, ctx) => `
@@ -116,6 +136,16 @@ const ENQUADRAMENTOS = [
     { valor: 'base',   rotulo: 'Parte de baixo' },
 ];
 const posicao = (v) => `object-position: center ${v === 'topo' ? 'top' : v === 'base' ? 'bottom' : 'center'}`;
+
+/* As larguras da imagem e do vídeo — os dois ocupam a página do mesmo jeito,
+   e um vídeo no meio de uma sequência de slides precisa casar com eles. */
+const LARGURAS = [
+    { valor: 'inteira', rotulo: 'De ponta a ponta' },
+    { valor: 'margem', rotulo: 'Com margem' },
+    { valor: 'slide', rotulo: 'Slide' },
+];
+const larguraDe = (v) => (['margem', 'slide'].includes(v) ? v : 'inteira');
+const resumoLargura = (v) => ({ margem: 'com margem', slide: 'slide' }[v] || 'de ponta a ponta');
 
 export const BLOCOS = {
     capa: {
@@ -321,17 +351,14 @@ export const BLOCOS = {
         padrao: () => ({ imagem: null, legenda: '', largura: 'inteira', enquadramento: 'centro' }),
         campos: [
             { nome: 'imagem', rotulo: 'Imagem', tipo: 'imagem' },
-            { nome: 'largura', rotulo: 'Largura', tipo: 'escolha', opcoes: [
-                { valor: 'inteira', rotulo: 'De ponta a ponta' },
-                { valor: 'margem', rotulo: 'Com margem' },
-                { valor: 'slide', rotulo: 'Slide' },
-            ], dica: 'De ponta a ponta, imagem mais alta que a tela é cortada; com margem, ela cabe inteira. Slide é para telas de uma apresentação em sequência: grandes e quase coladas umas nas outras.' },
+            { nome: 'largura', rotulo: 'Largura', tipo: 'escolha', opcoes: LARGURAS,
+              dica: 'De ponta a ponta, imagem mais alta que a tela é cortada; com margem, ela cabe inteira. Slide é para telas de uma apresentação em sequência: grandes e quase coladas umas nas outras.' },
             { nome: 'enquadramento', rotulo: 'O que fica visível no corte', tipo: 'escolha', opcoes: ENQUADRAMENTOS },
             { nome: 'legenda', rotulo: 'Legenda', tipo: 'texto' },
         ],
-        resumo: (d) => d.legenda || ({ margem: 'com margem', slide: 'slide' }[d.largura] || 'de ponta a ponta'),
+        resumo: (d) => d.legenda || resumoLargura(d.largura),
         desenhar: (d, ctx) => {
-            const largura = ['margem', 'slide'].includes(d.largura) ? d.largura : 'inteira';
+            const largura = larguraDe(d.largura);
             const img = imgHTML(d.imagem, { alt: d.legenda, estilo: posicao(d.enquadramento),
                                             proporcao: largura !== 'inteira', teto: largura === 'slide' ? 92 : 85 });
             if (!img && !ctx.previa) return '';
@@ -339,6 +366,33 @@ export const BLOCOS = {
                 <section class="apr-imagem apr-imagem--${largura}">
                     <figure>
                         ${img || vazio('Escolha a imagem.', ctx)}
+                        ${d.legenda ? `<figcaption>${esc(d.legenda)}</figcaption>` : ''}
+                    </figure>
+                </section>`;
+        },
+    },
+
+    video: {
+        rotulo: 'Vídeo', icone: 'film',
+        descricao: 'Um vídeo curto em loop, que toca sozinho e sem som.',
+        padrao: () => ({ video: null, legenda: '', largura: 'margem' }),
+        campos: [
+            { nome: 'video', rotulo: 'Vídeo', tipo: 'video',
+              dica: 'MP4 ou WebM, curto: a animação do logo, uma vinheta. Toca sozinho, em loop e sem som.' },
+            { nome: 'largura', rotulo: 'Largura', tipo: 'escolha', opcoes: LARGURAS,
+              dica: 'Os mesmos tamanhos da imagem: no meio de uma sequência de slides, escolha Slide.' },
+            { nome: 'legenda', rotulo: 'Legenda', tipo: 'texto' },
+        ],
+        resumo: (d) => d.legenda || resumoLargura(d.largura),
+        desenhar: (d, ctx) => {
+            const largura = larguraDe(d.largura);
+            const video = videoHTML(d.video, { alt: d.legenda, proporcao: largura !== 'inteira',
+                                               teto: largura === 'slide' ? 92 : 85 });
+            if (!video && !ctx.previa) return '';
+            return `
+                <section class="apr-imagem apr-imagem--${largura}">
+                    <figure>
+                        ${video || vazio('Escolha o vídeo.', ctx)}
                         ${d.legenda ? `<figcaption>${esc(d.legenda)}</figcaption>` : ''}
                     </figure>
                 </section>`;
@@ -556,7 +610,7 @@ function aplicacoesHTML(d, ctx) {
 }
 
 /** Os tipos que a equipe pode adicionar, na ordem do menu. */
-export const ADICIONAVEIS = ['capa', 'texto', 'logo', 'paleta', 'tipografia', 'aplicacoes', 'imagem', 'antes_depois'];
+export const ADICIONAVEIS = ['capa', 'texto', 'logo', 'paleta', 'tipografia', 'aplicacoes', 'imagem', 'video', 'antes_depois'];
 
 /** A página que nasce quando o projeto vira apresentação. */
 export const PAGINA_INICIAL = ['capa', 'texto', 'logo', 'paleta', 'tipografia', 'aplicacoes', 'fechamento'];
@@ -603,6 +657,27 @@ export const pintarMidia = (raiz) => {
         else img.replaceWith(Object.assign(document.createElement('div'), {
             className: `apr-buraco ${img.className}`, textContent: 'Imagem indisponível neste aparelho',
         }));
+    });
+    raiz.querySelectorAll('video[data-chave]').forEach(async (video) => {
+        const [url, capa] = await Promise.all([video.dataset.chave, video.dataset.capa]
+            .map(c => midia.url(c).catch(() => null)));
+        if (!url) {
+            return video.replaceWith(Object.assign(document.createElement('div'), {
+                className: 'apr-buraco', textContent: 'Vídeo indisponível neste aparelho',
+            }));
+        }
+        if (capa) video.poster = capa;
+        // O atributo `muted` vindo de innerHTML não liga a propriedade em todo
+        // navegador, e sem ela o autoplay é recusado.
+        video.muted = true;
+        video.src = url;
+        // Quem pediu menos movimento vê a capa e decide se toca.
+        if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            video.removeAttribute('autoplay');
+            video.controls = true;
+            return;
+        }
+        video.play().catch(() => { video.controls = true; });
     });
     raiz.querySelectorAll('[data-fonte-chave]').forEach(async (el) => {
         const familia = el.dataset.fonteFamilia;
@@ -831,20 +906,20 @@ export const ESTILOS_BLOCOS = `
     .apr-imagem figure { margin: 0; }
     /* Teto de altura: de ponta a ponta, imagem mais alta que a tela é
        cortada no enquadramento escolhido; com margem, ela encolhe inteira. */
-    .apr-imagem img { width: 100%; height: auto; display: block; }
-    .apr-imagem--inteira img { max-height: 90svh; object-fit: cover; }
+    .apr-imagem :is(img, video) { width: 100%; height: auto; display: block; }
+    .apr-imagem--inteira :is(img, video) { max-height: 90svh; object-fit: cover; }
     .apr-imagem--margem figure { display: flex; flex-direction: column; align-items: center; }
-    .apr-imagem--margem img { width: auto; max-width: 100%; max-height: 85svh; }
+    .apr-imagem--margem :is(img, video) { width: auto; max-width: 100%; max-height: 85svh; }
     .apr-imagem figcaption { padding: 0 var(--space-5); }
     .apr-imagem--margem { padding: clamp(32px, 6vw, 80px) var(--space-5); }
     .apr-imagem--margem figure { max-width: 1200px; margin: 0 auto; }
-    .apr-imagem--margem img { border-radius: var(--radius-lg); }
+    .apr-imagem--margem :is(img, video) { border-radius: var(--radius-lg); }
     /* Slide: telas de uma apresentação lidas em sequência. Maiores que "com
        margem" e quase coladas — o respiro de seção entre cada uma faria a
        sequência parecer uma pilha de imagens soltas. */
     .apr-imagem--slide { padding: clamp(4px, 0.6vw, 8px) var(--space-3); }
     .apr-imagem--slide figure { display: flex; flex-direction: column; align-items: center; max-width: 1600px; margin: 0 auto; }
-    .apr-imagem--slide img { width: auto; max-width: 100%; max-height: 92svh; border-radius: var(--radius-md); }
+    .apr-imagem--slide :is(img, video) { width: auto; max-width: 100%; max-height: 92svh; border-radius: var(--radius-md); }
     .apr-bloco:first-child .apr-imagem--slide { padding-top: clamp(16px, 3vw, 40px); }
 
     /* ── Antes e depois ───────────────────────────────────────────────── */
