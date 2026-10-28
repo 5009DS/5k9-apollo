@@ -3,7 +3,7 @@ import { esc, dataBR, haQuanto, paraIso } from '../lib/formato.js';
 import { vazioHTML } from '../lib/pecas.js';
 import { conversas, ato, daEquipe, estadoMeta } from '../lib/conversa.js';
 import {
-    desenharBlocos, pintarMidia, ligarBlocos, variaveisDeVisual, contraste, hexValido, ESTILOS_BLOCOS,
+    desenharBlocos, pintarMidia, ligarBlocos, variaveisDeVisual, contraste, hexValido, ehTelas, ESTILOS_BLOCOS,
 } from '../lib/blocos.js';
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -88,14 +88,17 @@ const desenhar = (container, visao, { token }) => {
                      && !primeiro.dados.imagem.faltando;
     const destaque = hexValido(visao.visual?.destaque) ? visao.visual.destaque : null;
     const topoClaro = comCapa && (capaComFoto || !destaque || contraste(destaque) === 'var(--paper)');
+    // Sequência de telas: sem topo, uma tela por vez (ver blocos.js, ehTelas).
+    const telas = ehTelas(visao.blocos);
 
     container.innerHTML = `
-        <div class="apr ${comCapa ? 'apr--com-capa' : ''} ${comCapa ? (topoClaro ? 'apr--topo-claro' : 'apr--topo-escuro') : ''}"
+        <div class="apr ${comCapa ? 'apr--com-capa' : ''} ${comCapa ? (topoClaro ? 'apr--topo-claro' : 'apr--topo-escuro') : ''} ${telas ? 'apr--telas' : ''}"
              style="${variaveisDeVisual(visao.visual)}">
+            ${telas ? '' : `
             <header class="apr-topo">
                 <img class="apr-topo__logo" src="/assets/logo/5k9-lockup-horizontal-white.png"
                      alt="5K9 Studio" width="816" height="185">
-            </header>
+            </header>`}
 
             ${visao.previa ? `<div class="apr-faixa-previa">Prévia do rascunho — versão ${visao.publicacao.numero} quando publicar</div>` : ''}
 
@@ -343,6 +346,33 @@ function injectStyles() {
 
         .apr--aviso { align-items: center; justify-content: center; padding: var(--space-6) var(--space-4); }
         .apr-aviso { display: flex; flex-direction: column; align-items: center; gap: var(--space-4); }
+
+        /* ── Modo telas ───────────────────────────────────────────────────
+           Uma tela por vez, cada uma do tamanho da janela. A trava é o
+           scroll-snap no documento: a rolagem sempre para numa tela inteira,
+           e scroll-snap-stop impede um gesto forte de pular várias. :has()
+           em vez de classe no <html>: sair desta página não deixa a trava
+           ligada na próxima. */
+        html:has(.apr--telas) { scroll-snap-type: y mandatory; }
+        .apr--telas .apr-bloco { scroll-snap-align: center; scroll-snap-stop: always; }
+        .apr--telas .apr-bloco:empty { display: none; }
+        .apr--telas .apr-rodape { scroll-snap-align: end; }
+        .apr--telas .apr-faixa-previa { position: fixed; left: 0; right: 0; }
+        .apr--telas .apr-imagem--slide,
+        .apr--telas .apr-bloco:first-child .apr-imagem--slide {
+            height: 100svh; padding: 0; display: flex; align-items: center; justify-content: center;
+        }
+        .apr--telas .apr-imagem--slide figure { max-width: none; width: 100%; }
+        .apr--telas .apr-imagem--slide :is(img, video) { max-height: 100svh; border-radius: 0; }
+        /* De pé, uma tela 16:9 do tamanho da janela seria uma faixa no meio
+           do vazio. As telas ficam na largura do celular, uma embaixo da
+           outra — e a trava continua parando em cada uma, pelo topo: pelo
+           centro, as primeiras nunca chegariam ao meio da tela. */
+        @media (orientation: portrait) {
+            .apr--telas .apr-bloco { scroll-snap-align: start; }
+            .apr--telas .apr-imagem--slide,
+            .apr--telas .apr-bloco:first-child .apr-imagem--slide { height: auto; padding: 2px 0; }
+        }
 
         @media (min-width: 720px) {
             .apr-topo { padding-left: var(--space-8); padding-right: var(--space-8); }

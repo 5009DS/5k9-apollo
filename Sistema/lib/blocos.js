@@ -360,7 +360,7 @@ export const BLOCOS = {
         desenhar: (d, ctx) => {
             const largura = larguraDe(d.largura);
             const img = imgHTML(d.imagem, { alt: d.legenda, estilo: posicao(d.enquadramento),
-                                            proporcao: largura !== 'inteira', teto: largura === 'slide' ? 92 : 85 });
+                                            proporcao: largura !== 'inteira', teto: tetoDe(largura, ctx) });
             if (!img && !ctx.previa) return '';
             return `
                 <section class="apr-imagem apr-imagem--${largura}">
@@ -387,7 +387,7 @@ export const BLOCOS = {
         desenhar: (d, ctx) => {
             const largura = larguraDe(d.largura);
             const video = videoHTML(d.video, { alt: d.legenda, proporcao: largura !== 'inteira',
-                                               teto: largura === 'slide' ? 92 : 85 });
+                                               teto: tetoDe(largura, ctx) });
             if (!video && !ctx.previa) return '';
             return `
                 <section class="apr-imagem apr-imagem--${largura}">
@@ -628,6 +628,21 @@ export const variaveisDeVisual = (visual) => {
 };
 
 /**
+ * A página é uma sequência de telas? Todo bloco, fora o fechamento, é imagem
+ * ou vídeo na largura Slide. Aí ela vira modo telas (apresentacao.js): cada
+ * tela ocupa a tela inteira, a rolagem trava em uma por vez e o topo sai —
+ * as telas já trazem a marca do estúdio desenhada nelas.
+ */
+export const ehTelas = (blocos) => {
+    const miolo = (blocos || []).filter(b => b.tipo !== 'fechamento');
+    return miolo.length > 0
+        && miolo.every(b => ['imagem', 'video'].includes(b.tipo) && b.dados?.largura === 'slide');
+};
+
+/* Teto de altura, em % da tela: no modo telas, o slide pode ir até a borda. */
+const tetoDe = (largura, ctx) => (largura === 'slide' ? (ctx.telas ? 100 : 92) : 85);
+
+/**
  * Os blocos de uma apresentação, em HTML. A moldura (topo e rodapé) é de
  * quem chama; aqui só o miolo — e o fechamento, que existe sempre: uma
  * página publicada antes dele existir ainda precisa do lugar de aprovar.
@@ -637,13 +652,14 @@ export const desenharBlocos = (visao) => {
     if (!blocos.some(b => b.tipo === 'fechamento')) {
         blocos.push({ id: 'fechamento', tipo: 'fechamento', dados: BLOCOS.fechamento.padrao() });
     }
+    const telas = ehTelas(blocos);
     let numero = 0;
     return blocos.map(b => {
         const tipo = BLOCOS[b.tipo];
         if (!tipo) return '';
         const ctx = {
             previa: visao.previa, cliente: visao.cliente, projeto: visao.projeto, bloco: b,
-            numero: tipo.numerada ? ++numero : null,
+            numero: tipo.numerada ? ++numero : null, telas,
         };
         return `<div class="apr-bloco" data-bloco="${esc(b.id)}" data-tipo="${esc(b.tipo)}">${tipo.desenhar(b.dados || {}, ctx)}</div>`;
     }).join('');
