@@ -208,9 +208,11 @@ const preencherDecisao = (container, visao, token) => {
             erro.hidden = true;
             try {
                 if (modo === 'ajuste') {
-                    await store.pedirAjuste(token, visao.projeto.id, visao.publicacao.numero, nome, form.texto.value);
+                    await store.pedirAjuste(token, visao.projeto.id, visao.publicacao.numero, nome, form.texto.value,
+                                            { nuvem: visao.nuvem });
                 } else {
-                    await store.aprovarPublicacao(token, visao.projeto.id, visao.publicacao.numero, nome);
+                    await store.aprovarPublicacao(token, visao.projeto.id, visao.publicacao.numero, nome,
+                                                  { nuvem: visao.nuvem });
                 }
                 guardarNome(nome);
                 const nova = await store.apresentacao(token, visao.projeto.id);

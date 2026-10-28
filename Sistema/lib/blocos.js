@@ -27,6 +27,7 @@
 
 import { esc } from './formato.js';
 import { midia } from './midia.js';
+import { urlPublica } from './nuvem.js';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Ajudantes de desenho
@@ -666,22 +667,25 @@ export const desenharBlocos = (visao) => {
 };
 
 /** Pinta as imagens e carrega as fontes. Imagem que não está aqui vira aviso. */
+/* O endereço de um arquivo: o deste navegador quando ele está aqui (a equipe,
+   a prévia); senão, o da versão publicada na nuvem (o cliente, em qualquer
+   aparelho). Arquivo que não existe em nenhum dos dois cai no onerror. */
+const enderecoDe = async (chave) => (!chave ? ''
+    : (await midia.url(chave).catch(() => null)) || urlPublica(chave));
+
 export const pintarMidia = (raiz) => {
     raiz.querySelectorAll('img[data-chave]').forEach(async (img) => {
-        const url = await midia.url(img.dataset.chave).catch(() => null);
-        if (url) img.src = url;
-        else img.replaceWith(Object.assign(document.createElement('div'), {
+        // Se a imagem não falhar ao carregar, este aviso nunca aparece.
+        img.onerror = () => img.replaceWith(Object.assign(document.createElement('div'), {
             className: `apr-buraco ${img.className}`, textContent: 'Imagem indisponível neste aparelho',
         }));
+        img.src = await enderecoDe(img.dataset.chave);
     });
     raiz.querySelectorAll('video[data-chave]').forEach(async (video) => {
-        const [url, capa] = await Promise.all([video.dataset.chave, video.dataset.capa]
-            .map(c => midia.url(c).catch(() => null)));
-        if (!url) {
-            return video.replaceWith(Object.assign(document.createElement('div'), {
-                className: 'apr-buraco', textContent: 'Vídeo indisponível neste aparelho',
-            }));
-        }
+        const [url, capa] = await Promise.all([video.dataset.chave, video.dataset.capa].map(enderecoDe));
+        video.onerror = () => video.replaceWith(Object.assign(document.createElement('div'), {
+            className: 'apr-buraco', textContent: 'Vídeo indisponível neste aparelho',
+        }));
         if (capa) video.poster = capa;
         // O atributo `muted` vindo de innerHTML não liga a propriedade em todo
         // navegador, e sem ela o autoplay é recusado.
@@ -698,8 +702,7 @@ export const pintarMidia = (raiz) => {
     raiz.querySelectorAll('[data-fonte-chave]').forEach(async (el) => {
         const familia = el.dataset.fonteFamilia;
         if ([...document.fonts].some(f => f.family === familia)) return;
-        const url = await midia.url(el.dataset.fonteChave).catch(() => null);
-        if (!url) return;
+        const url = await enderecoDe(el.dataset.fonteChave);
         try {
             // Faixa inteira de pesos: fonte variável mostra cada peso de
             // verdade; fonte de um peso só fica igual, em vez de o navegador

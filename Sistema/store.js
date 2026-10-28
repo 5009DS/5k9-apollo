@@ -32,6 +32,7 @@ import { midia } from './lib/midia.js';
 import { prepararFoto, prepararVideo, extensaoDe } from './lib/fotos.js';
 import { semExtensao } from './lib/formato.js';
 import { entradaDaEquipe } from './lib/conversa.js';
+import { nuvem, CONFIGURADO, SemSessao } from './lib/nuvem.js';
 
 const db = local;
 
@@ -253,19 +254,78 @@ export const store = {
      * Congela uma CÓPIA dos blocos: editar o rascunho depois não mexe no que
      * o cliente está vendo — nem, principalmente, no que ele já aprovou.
      */
-    publicar: async (projetoId) => {
+    publicar: async (projetoId, aoAvancar) => {
         const [blocos, pubs, projeto] = await Promise.all([
             store.blocosDe(projetoId), store.publicacoesDe(projetoId),
             store.projetos.listar().then(l => l.find(p => p.id === projetoId)),
         ]);
         if (!blocos.length) throw new Error('A página está vazia. Adicione ao menos um bloco antes de publicar.');
-        return store.publicacoes.salvar({
+        // O login antes de numerar: sem ele, a V4 nasceria aqui e não no link.
+        if (CONFIGURADO && !(await nuvem.sessao())) throw new SemSessao();
+        const pub = await store.publicacoes.salvar({
             projeto_id: projetoId,
             numero: (pubs[0]?.numero || 0) + 1,
             blocos: structuredClone(blocos.map(({ id, tipo, dados }) => ({ id, tipo, dados }))),
             visual: projeto?.visual ? structuredClone(projeto.visual) : null,
             publicado_por: null,
         });
+        if (CONFIGURADO) await store.subirPublicacao(projetoId, pub.numero, aoAvancar);
+        return pub;
+    },
+
+    /**
+     * Sobe para a nuvem uma versão já publicada aqui — o passo final de
+     * publicar, e o "tentar de novo" quando a rede caiu no meio. Marca a
+     * versão com `nuvem_em`, que é o que a tela usa para dizer se o link está
+     * de pé.
+     */
+    subirPublicacao: async (projetoId, numero, aoAvancar) => {
+        const achado = await db.visaoPublicada(projetoId, numero);
+        if (!achado) throw new Error('Versão não encontrada.');
+        await nuvem.publicar({ ...achado, numero }, aoAvancar);
+        const pub = (await store.publicacoesDe(projetoId)).find(p => p.numero === Number(numero));
+        return store.publicacoes.salvar({ ...pub, nuvem_em: new Date().toISOString() });
+    },
+
+    // ── Login da equipe (só para publicar, por enquanto) ────────────────
+    nuvemLigada: CONFIGURADO,
+    sessaoNuvem: () => nuvem.sessao(),
+    entrar: (email, senha) => nuvem.entrar(email, senha),
+
+    /**
+     * Traz para este navegador o que o cliente disse no link — aprovação e
+     * pedidos de ajuste — e as respostas da equipe dadas em outro aparelho.
+     * Pelo id: rodar duas vezes não duplica nada.
+     */
+    puxarRetornos: async (projetoId) => {
+        if (!CONFIGURADO || !(await nuvem.sessao())) return 0;
+        const [retornos, pubs, aprovacoes, comentarios] = await Promise.all([
+            nuvem.retornosDe(projetoId), store.publicacoesDe(projetoId),
+            store.aprovacoes.listar(), store.comentarios.listar(),
+        ]);
+        const ja = new Set([...aprovacoes, ...comentarios].map(x => x.id));
+        let novos = 0;
+        for (const r of retornos) {
+            const pub = pubs.find(p => p.numero === r.numero);
+            if (!pub || ja.has(r.id)) continue;
+            if (r.tipo === 'aprovacao') {
+                await store.aprovacoes.salvar({
+                    id: r.id, versao_id: null, publicacao_id: pub.id, etapa_id: null,
+                    decisao: 'aprovado', quem_nome: r.autor, quem_email: null, ip_hash: null,
+                    retrato: { projeto: null, numero: pub.numero, publicada_em: pub.criado_em, blocos: pub.blocos },
+                    criado_em: r.criado_em,
+                });
+            } else {
+                await store.comentarios.salvar({
+                    id: r.id, versao_id: null, publicacao_id: pub.id, pai_id: r.pai_id,
+                    origem: r.origem, tipo: r.tipo, autor: r.autor, interno: false,
+                    quadro: null, quadro_fim: null, texto: r.texto, anotacao: null,
+                    herdado_de: null, editado_em: null, criado_em: r.criado_em,
+                });
+            }
+            novos++;
+        }
+        return novos;
     },
 
     /**
@@ -289,13 +349,26 @@ export const store = {
         if (ap && projetos.some(p => p.id !== projetoId && p.cliente_id === clienteId && p.apelido === ap)) {
             throw new Error(`"${ap}" já é o endereço de outro projeto deste cliente. Escolha outro.`);
         }
-        await store.clientes.salvar({ ...cliente, apelido: ac });
-        return store.projetos.salvar({ ...projeto, apelido: ap });
+        const c = await store.clientes.salvar({ ...cliente, apelido: ac });
+        const p = await store.projetos.salvar({ ...projeto, apelido: ap });
+        // As versões que já estão no link passam a abrir pelo endereço novo.
+        if (CONFIGURADO) await nuvem.atualizarApelidos({ cliente: c, projeto: p });
+        return p;
     },
 
-    /** A resposta da equipe dentro de um fio do cliente. */
-    responder: (raiz, { tipo, texto, autor }) =>
-        store.comentarios.salvar(entradaDaEquipe({ raiz, tipo, texto, autor })),
+    /** A resposta da equipe dentro de um fio do cliente — e no link dele. */
+    responder: async (raiz, { tipo, texto, autor }) => {
+        const salvo = await store.comentarios.salvar(entradaDaEquipe({ raiz, tipo, texto, autor }));
+        const pub = (await store.publicacoes.listar()).find(p => p.id === salvo.publicacao_id);
+        if (CONFIGURADO && pub?.nuvem_em) {
+            await nuvem.responder({
+                id: salvo.id, projeto_id: pub.projeto_id, numero: pub.numero, pai_id: salvo.pai_id,
+                origem: 'equipe', tipo: salvo.tipo, autor: salvo.autor, texto: salvo.texto,
+                criado_em: salvo.criado_em,
+            });
+        }
+        return salvo;
+    },
 
     /**
      * O arquivo de fonte de um bloco de tipografia.
@@ -319,15 +392,34 @@ export const store = {
     /** Marca ou desmarca uma foto na seleção de quem está vendo. */
     selecionar: (token, pecaId, marcado, sessao) => db.selecionar(token, pecaId, marcado, sessao),
 
-    /** A última publicação de uma apresentação, para o cliente. */
-    apresentacao: (token, projetoId) => db.apresentacao(token, projetoId),
+    /**
+     * A última publicação de uma apresentação, para o cliente. A nuvem
+     * primeiro: é o que o cliente vê em qualquer aparelho, e é para lá que a
+     * aprovação dele vai. Este navegador só responde quando a versão nunca
+     * subiu — ou quando a rede caiu.
+     */
+    apresentacao: async (token, projetoId) => {
+        if (CONFIGURADO) {
+            try {
+                const daNuvem = await nuvem.apresentacao(token, projetoId);
+                if (daNuvem) return daNuvem;
+            } catch (e) {
+                console.warn('[store] nuvem fora do ar, tentando este navegador:', e);
+            }
+        }
+        return db.apresentacao(token, projetoId);
+    },
 
     /** O rascunho, na mesma forma — só para a prévia da equipe. */
     previa: (projetoId) => db.previa(projetoId),
 
-    aprovarPublicacao: (token, projetoId, numero, nome) =>
-        db.aprovarPublicacao(token, projetoId, numero, nome),
+    /* Aprovar e pedir ajuste vão para onde a versão veio: `nuvem` é o carimbo
+       que ap_apresentacao põe na visão. */
+    aprovarPublicacao: (token, projetoId, numero, nome, { nuvem: daNuvem = false } = {}) => (daNuvem
+        ? nuvem.registrarRetorno({ clienteLink: token, projetoLink: projetoId, numero, tipo: 'aprovacao', nome })
+        : db.aprovarPublicacao(token, projetoId, numero, nome)),
 
-    pedirAjuste: (token, projetoId, numero, nome, texto) =>
-        db.pedirAjuste(token, projetoId, numero, nome, texto),
+    pedirAjuste: (token, projetoId, numero, nome, texto, { nuvem: daNuvem = false } = {}) => (daNuvem
+        ? nuvem.registrarRetorno({ clienteLink: token, projetoLink: projetoId, numero, tipo: 'ajuste', nome, texto })
+        : db.pedirAjuste(token, projetoId, numero, nome, texto)),
 };

@@ -94,6 +94,12 @@ const campoHTML = (c, valores) => {
                                placeholder="${esc(c.placeholder || '')}" value="${esc(v ?? '')}"
                                autocomplete="email" inputmode="email">`;
             break;
+        // Senha do login da equipe: type=password e o autocomplete do
+        // gerenciador de senhas, que já tem a do Forms guardada.
+        case 'senha':
+            controle = `<input class="ds-input" id="${id}" name="${c.nome}" type="password"
+                               value="" autocomplete="current-password">`;
+            break;
         /* Nota: não é campo, é resultado. Existe para o formulário poder
            MOSTRAR uma conta enquanto a pessoa digita — "6x de R$ 700,00" —
            sem transformar o valor derivado num campo editável. Três campos

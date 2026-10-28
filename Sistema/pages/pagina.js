@@ -74,6 +74,10 @@ export const renderPagina = async (container, projetoId) => {
             ${modelo === 'apresentacao' && publicada && cliente ? `
                 <a class="ds-btn ds-btn--ghost" href="${caminhoDaApresentacao(cliente, projeto)}" target="_blank" rel="noopener">
                     <i data-lucide="external-link"></i> Ver como o cliente vê</a>` : ''}
+            ${modelo === 'apresentacao' && publicada && store.nuvemLigada && !publicada.nuvem_em ? `
+                <button class="ds-btn ds-btn--ghost" id="pg-subir" data-numero="${publicada.numero}"
+                        title="Publicada só neste navegador: o cliente ainda não abre em outro aparelho">
+                    <i data-lucide="cloud-upload"></i> Pôr a versão ${publicada.numero} no link</button>` : ''}
             ${modelo === 'apresentacao' ? `
                 <button class="ds-btn ds-btn--primary" id="pg-publicar" ${temMudancas ? '' : 'disabled'}>
                     <i data-lucide="send"></i> Publicar versão ${(publicada?.numero || 0) + 1}
@@ -157,6 +161,15 @@ export const renderPagina = async (container, projetoId) => {
     ligarPrevia(ctx);
     desenharEditor(ctx);
     desenharVersoes(ctx);
+
+    /* O que o cliente disse no link chega pela nuvem. Sem esperar por ela: a
+       página abre com o que já está aqui e se redesenha se houver novidade
+       (na segunda passada não há, e o ciclo para). */
+    store.puxarRetornos(projetoId).then((novos) => {
+        if (!novos) return;
+        toast(plural(novos, 'retorno novo do cliente chegou', 'retornos novos do cliente chegaram') + '.');
+        redesenhar();
+    }).catch((e) => console.warn('[pagina] retornos da nuvem:', e));
     if (window.lucide) lucide.createIcons();
 };
 
@@ -243,18 +256,69 @@ const depoisDeGravar = async (ctx) => {
     }
 };
 
+/* Publicar sobe a versão para a nuvem, e isso pede o login da equipe — o
+   mesmo do Forms e do Chronos. Sem sessão, abre o login e, entrando, refaz
+   o gesto: a pessoa clicou em publicar, não em entrar. */
+const comLogin = async (acao) => {
+    try {
+        return await acao();
+    } catch (falha) {
+        if (falha?.code !== 'SEM_SESSAO') throw falha;
+        abrirFormulario({
+            titulo: 'Entrar para publicar',
+            subtitulo: 'O mesmo login do Forms e do Chronos. Fica salvo neste navegador.',
+            campos: [
+                { nome: 'email', rotulo: 'E-mail', tipo: 'email', obrigatorio: true },
+                { nome: 'senha', rotulo: 'Senha', tipo: 'senha', obrigatorio: true },
+            ],
+            rotuloSalvar: 'Entrar e publicar',
+            aoSalvar: async (d) => {
+                await store.entrar(d.email, d.senha);
+                // Depois que o painel fecha, com a sessão já de pé.
+                setTimeout(() => acao().catch(e => toast(esc(e.message || 'Não foi possível publicar.'))), 0);
+            },
+        });
+        return null;
+    }
+};
+
+/* O botão conta o envio: uma apresentação de telas são duas dezenas de
+   arquivos, e um botão parado por quinze segundos parece travado. */
+const progressoNo = (botao) => (feito, total) => {
+    botao.innerHTML = `<i data-lucide="loader"></i> Enviando ${Math.min(feito + 1, total)} de ${total}…`;
+};
+
 const ligarPublicar = (ctx) => {
+    const abrir = ctx.cliente ? { label: 'Abrir', href: caminhoDaApresentacao(ctx.cliente, ctx.projeto) } : undefined;
+
     document.getElementById('pg-publicar')?.addEventListener('click', async (e) => {
         const botao = e.currentTarget;
         botao.disabled = true;
         try {
-            const pub = await store.publicar(ctx.projeto.id);
-            toast(`Versão ${pub.numero} publicada. O cliente já vê esta versão no link.`,
-                ctx.cliente ? { label: 'Abrir', href: caminhoDaApresentacao(ctx.cliente, ctx.projeto) } : undefined);
+            const pub = await comLogin(() => store.publicar(ctx.projeto.id, progressoNo(botao)));
+            if (!pub) { botao.disabled = false; return; }
+            toast(`Versão ${pub.numero} publicada. O cliente já vê esta versão no link, em qualquer aparelho.`, abrir);
             ctx.redesenhar();
         } catch (falha) {
+            // A versão pode ter nascido aqui e não subido: o redesenho mostra
+            // o botão de tentar de novo.
             toast(esc(falha.message || 'Não foi possível publicar.'));
-            botao.disabled = false;
+            ctx.redesenhar();
+        }
+    });
+
+    document.getElementById('pg-subir')?.addEventListener('click', async (e) => {
+        const botao = e.currentTarget;
+        const numero = Number(botao.dataset.numero);
+        botao.disabled = true;
+        try {
+            const pub = await comLogin(() => store.subirPublicacao(ctx.projeto.id, numero, progressoNo(botao)));
+            if (!pub) { botao.disabled = false; return; }
+            toast(`Versão ${numero} no link. O cliente já abre em qualquer aparelho.`, abrir);
+            ctx.redesenhar();
+        } catch (falha) {
+            toast(esc(falha.message || 'Não foi possível enviar.'));
+            ctx.redesenhar();
         }
     });
 };

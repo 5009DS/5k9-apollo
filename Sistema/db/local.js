@@ -360,6 +360,25 @@ export const local = {
         };
     },
 
+    /**
+     * Uma versão publicada na forma que o cliente recebe, sem conversa —
+     * é o que sobe para a nuvem (lib/nuvem.js). Imagem sem autorização já
+     * sai como null daqui, e por isso nunca chega a ser enviada.
+     */
+    visaoPublicada: async (projetoId, numero) => {
+        const projeto = ler('projetos').find(p => p.id === projetoId);
+        const publicacao = ler('publicacoes').find(p => p.projeto_id === projetoId && p.numero === Number(numero));
+        if (!projeto || !publicacao) return null;
+        const cliente = ler('clientes').find(c => c.id === projeto.cliente_id);
+        return {
+            cliente, projeto,
+            visao: montarApresentacao({
+                cliente, projeto: { ...projeto, visual: publicacao.visual ?? projeto.visual },
+                blocos: publicacao.blocos, numero: publicacao.numero, publicada_em: publicacao.criado_em,
+            }),
+        };
+    },
+
     /** A prévia da equipe: o RASCUNHO, na mesma forma que o cliente recebe. */
     previa: async (projetoId) => {
         const projeto = ler('projetos').find(p => p.id === projetoId);
