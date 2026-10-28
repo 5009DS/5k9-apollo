@@ -61,7 +61,7 @@ const paragrafos = (texto) => String(texto || '').trim().split(/\n\s*\n/).filter
 /* `proporcao`: a caixa já nasce com a proporção da imagem. Sem isto, imagem
    com largura automática tem zero de altura até carregar, e a página pula
    quando ela chega. */
-const imgHTML = (img, { classe = '', grande = true, alt = '', estilo = '', proporcao = false } = {}) => {
+const imgHTML = (img, { classe = '', grande = true, alt = '', estilo = '', proporcao = false, teto = 85 } = {}) => {
     if (!img) return '';
     if (img.bloqueada) {
         return `<div class="apr-buraco ${classe}"><span>Sem autorização de imagem — o cliente não vê
@@ -70,10 +70,10 @@ const imgHTML = (img, { classe = '', grande = true, alt = '', estilo = '', propo
     if (img.faltando) return `<div class="apr-buraco ${classe}"><span>Imagem removida</span></div>`;
     const chave = grande ? img.proxy_chave : (img.capa_chave || img.proxy_chave);
     if (proporcao && img.largura && img.altura) {
-        // Largura = a menor entre a coluna e "85% da tela × proporção": a
+        // Largura = a menor entre a coluna e "teto da tela × proporção": a
         // altura que sai disso nunca passa do teto, nem antes de carregar.
         const r = `${img.largura} / ${img.altura}`;
-        estilo = `${estilo}; aspect-ratio: ${r}; height: auto; width: min(100%, calc(85svh * ${r}))`;
+        estilo = `${estilo}; aspect-ratio: ${r}; height: auto; width: min(100%, calc(${teto}svh * ${r}))`;
     }
     return `<img class="${classe}" data-chave="${esc(chave)}" alt="${esc(alt)}" ${estilo ? `style="${estilo}"` : ''}
                  width="${Number(img.largura) || 1600}" height="${Number(img.altura) || 1000}" loading="lazy">`;
@@ -324,16 +324,19 @@ export const BLOCOS = {
             { nome: 'largura', rotulo: 'Largura', tipo: 'escolha', opcoes: [
                 { valor: 'inteira', rotulo: 'De ponta a ponta' },
                 { valor: 'margem', rotulo: 'Com margem' },
-            ], dica: 'De ponta a ponta, imagem mais alta que a tela é cortada; com margem, ela cabe inteira.' },
+                { valor: 'slide', rotulo: 'Slide' },
+            ], dica: 'De ponta a ponta, imagem mais alta que a tela é cortada; com margem, ela cabe inteira. Slide é para telas de uma apresentação em sequência: grandes e quase coladas umas nas outras.' },
             { nome: 'enquadramento', rotulo: 'O que fica visível no corte', tipo: 'escolha', opcoes: ENQUADRAMENTOS },
             { nome: 'legenda', rotulo: 'Legenda', tipo: 'texto' },
         ],
-        resumo: (d) => d.legenda || (d.largura === 'margem' ? 'com margem' : 'de ponta a ponta'),
+        resumo: (d) => d.legenda || ({ margem: 'com margem', slide: 'slide' }[d.largura] || 'de ponta a ponta'),
         desenhar: (d, ctx) => {
-            const img = imgHTML(d.imagem, { alt: d.legenda, estilo: posicao(d.enquadramento), proporcao: d.largura === 'margem' });
+            const largura = ['margem', 'slide'].includes(d.largura) ? d.largura : 'inteira';
+            const img = imgHTML(d.imagem, { alt: d.legenda, estilo: posicao(d.enquadramento),
+                                            proporcao: largura !== 'inteira', teto: largura === 'slide' ? 92 : 85 });
             if (!img && !ctx.previa) return '';
             return `
-                <section class="apr-imagem apr-imagem--${d.largura === 'margem' ? 'margem' : 'inteira'}">
+                <section class="apr-imagem apr-imagem--${largura}">
                     <figure>
                         ${img || vazio('Escolha a imagem.', ctx)}
                         ${d.legenda ? `<figcaption>${esc(d.legenda)}</figcaption>` : ''}
@@ -836,6 +839,13 @@ export const ESTILOS_BLOCOS = `
     .apr-imagem--margem { padding: clamp(32px, 6vw, 80px) var(--space-5); }
     .apr-imagem--margem figure { max-width: 1200px; margin: 0 auto; }
     .apr-imagem--margem img { border-radius: var(--radius-lg); }
+    /* Slide: telas de uma apresentação lidas em sequência. Maiores que "com
+       margem" e quase coladas — o respiro de seção entre cada uma faria a
+       sequência parecer uma pilha de imagens soltas. */
+    .apr-imagem--slide { padding: clamp(4px, 0.6vw, 8px) var(--space-3); }
+    .apr-imagem--slide figure { display: flex; flex-direction: column; align-items: center; max-width: 1600px; margin: 0 auto; }
+    .apr-imagem--slide img { width: auto; max-width: 100%; max-height: 92svh; border-radius: var(--radius-md); }
+    .apr-bloco:first-child .apr-imagem--slide { padding-top: clamp(16px, 3vw, 40px); }
 
     /* ── Antes e depois ───────────────────────────────────────────────── */
     .apr-ad__palco {
