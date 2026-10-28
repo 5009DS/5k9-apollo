@@ -7,7 +7,8 @@ import { midia } from '../lib/midia.js';
 import { ACEITOS, VIDEOS } from '../lib/fotos.js';
 import { conversas, ato, daEquipe, estadoMeta } from '../lib/conversa.js';
 import { esc, haQuanto, plural } from '../lib/formato.js';
-import { vazioHTML, caminhoDoCliente } from '../lib/pecas.js';
+import { vazioHTML, caminhoDaApresentacao, paraApelido } from '../lib/pecas.js';
+import { abrirFormulario } from '../components/campos.js';
 import { BLOCOS, ADICIONAVEIS, PAGINA_INICIAL, hexValido } from '../lib/blocos.js';
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -67,8 +68,11 @@ export const renderPagina = async (container, projetoId) => {
         actions: `
             <a class="ds-btn ds-btn--ghost" href="/galeria/${esc(projetoId)}">
                 <i data-lucide="images"></i> Imagens</a>
+            ${modelo === 'apresentacao' && cliente ? `
+                <button class="ds-btn ds-btn--ghost" id="pg-link">
+                    <i data-lucide="link"></i> Link personalizado</button>` : ''}
             ${modelo === 'apresentacao' && publicada && cliente ? `
-                <a class="ds-btn ds-btn--ghost" href="${caminhoDoCliente(cliente)}/p/${esc(projetoId)}" target="_blank" rel="noopener">
+                <a class="ds-btn ds-btn--ghost" href="${caminhoDaApresentacao(cliente, projeto)}" target="_blank" rel="noopener">
                     <i data-lucide="external-link"></i> Ver como o cliente vê</a>` : ''}
             ${modelo === 'apresentacao' ? `
                 <button class="ds-btn ds-btn--primary" id="pg-publicar" ${temMudancas ? '' : 'disabled'}>
@@ -147,6 +151,7 @@ export const renderPagina = async (container, projetoId) => {
 
     const ctx = { container, content, projeto, cliente, blocos, redesenhar, t };
     ligarPublicar(ctx);
+    ligarLink(ctx);
     ligarDestaque(ctx);
     ligarLista(ctx);
     ligarPrevia(ctx);
@@ -245,12 +250,60 @@ const ligarPublicar = (ctx) => {
         try {
             const pub = await store.publicar(ctx.projeto.id);
             toast(`Versão ${pub.numero} publicada. O cliente já vê esta versão no link.`,
-                ctx.cliente ? { label: 'Abrir', href: `${caminhoDoCliente(ctx.cliente)}/p/${ctx.projeto.id}` } : undefined);
+                ctx.cliente ? { label: 'Abrir', href: caminhoDaApresentacao(ctx.cliente, ctx.projeto) } : undefined);
             ctx.redesenhar();
         } catch (falha) {
             toast(esc(falha.message || 'Não foi possível publicar.'));
             botao.disabled = false;
         }
+    });
+};
+
+/* O link personalizado: os dois pedaços legíveis do endereço, com o link
+   inteiro aparecendo enquanto se digita — é ele que vai para o WhatsApp. */
+const ligarLink = (ctx) => {
+    document.getElementById('pg-link')?.addEventListener('click', () => {
+        const { cliente, projeto } = ctx;
+        const base = `${window.location.host}/e/`;
+        abrirFormulario({
+            titulo: 'Link personalizado',
+            subtitulo: 'Um endereço legível no lugar do código. O link antigo continua abrindo.',
+            campos: [
+                { nome: 'cliente', rotulo: 'Cliente', placeholder: cliente.token,
+                  dica: `Vale para todos os links de ${cliente.nome}. Vazio, volta ao código.` },
+                { nome: 'projeto', rotulo: 'Projeto', placeholder: 'identidade-visual',
+                  dica: 'Só deste projeto. Vazio, volta ao código.' },
+            ],
+            valores: { cliente: cliente.apelido || '', projeto: projeto.apelido || '' },
+            topo: '<p class="pg-link-previa" data-link-previa></p>',
+            rotuloSalvar: 'Salvar link',
+            aoMontar: (painel) => {
+                const previa = painel.querySelector('[data-link-previa]');
+                const campo = (n) => painel.querySelector(`[name="${n}"]`);
+                const mostrar = () => {
+                    const c = paraApelido(campo('cliente').value) || cliente.token;
+                    const p = paraApelido(campo('projeto').value) || projeto.id;
+                    previa.textContent = `${base}${c}/p/${p}`;
+                };
+                // O que se digita já vira apelido ao sair do campo: "Dr. Winter" → "dr-winter".
+                ['cliente', 'projeto'].forEach(n => {
+                    campo(n).addEventListener('input', mostrar);
+                    campo(n).addEventListener('blur', () => { campo(n).value = paraApelido(campo(n).value); });
+                });
+                mostrar();
+            },
+            aoSalvar: async (dados) => {
+                const salvo = await store.definirLink({
+                    clienteId: cliente.id, apelidoCliente: paraApelido(dados.cliente),
+                    projetoId: projeto.id, apelidoProjeto: paraApelido(dados.projeto),
+                });
+                const atualizado = { ...cliente, apelido: paraApelido(dados.cliente) || null };
+                const url = `${window.location.origin}${caminhoDaApresentacao(atualizado, salvo)}`;
+                try { await navigator.clipboard.writeText(url); toast('Link salvo e copiado.', { label: 'Abrir', href: url }); }
+                catch { toast('Link salvo.', { label: 'Abrir', href: url }); }
+                ctx.redesenhar();
+            },
+        });
     });
 };
 
@@ -846,6 +899,11 @@ const naoEncontrado = (container, projetoId) => {
 // ─────────────────────────────────────────────────────────────────────────
 
 const ESTILOS = `<style>
+    .pg-link-previa {
+        margin: 0 0 var(--space-4); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md);
+        background: var(--surface-3); font-family: var(--font-mono);
+        font-size: var(--text-sm); color: var(--text-primary); word-break: break-all;
+    }
     .pg-situacao {
         display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 var(--space-3);
         border-radius: var(--radius-pill); background: var(--success-muted); color: var(--success);

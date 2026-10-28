@@ -177,7 +177,10 @@ const clienteDoToken = (token) => ler('clientes').find(c =>
 const apresentacaoDoToken = (token, projetoId) => {
     const cliente = clienteDoToken(token);
     if (!cliente) return null;
-    const projeto = ler('projetos').find(p => p.id === projetoId && p.cliente_id === cliente.id
+    // O projeto pelo id ou pelo apelido do link personalizado — os dois
+    // endereços valem, para o link antigo já mandado não quebrar.
+    const projeto = ler('projetos').find(p => (p.id === projetoId || (p.apelido && p.apelido === projetoId))
+                                          && p.cliente_id === cliente.id
                                           && !p.arquivado_em && modeloDe(p) === 'apresentacao');
     if (!projeto) return null;
     const publicacao = ultimaPublicacao(projeto.id);

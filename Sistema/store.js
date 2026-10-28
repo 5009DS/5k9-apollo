@@ -268,6 +268,31 @@ export const store = {
         });
     },
 
+    /**
+     * O link personalizado: apelido do cliente no lugar do token, apelido do
+     * projeto no lugar do id. Vazio volta ao token e ao id — que continuam
+     * valendo mesmo com apelido, para o link já mandado não quebrar.
+     *
+     * Ligado ao banco, o apelido do cliente é o de vz_clientes: mudar aqui
+     * muda o link do Chronos também, porque é o mesmo link (README).
+     */
+    definirLink: async ({ clienteId, apelidoCliente, projetoId, apelidoProjeto }) => {
+        const [clientes, projetos] = await Promise.all([store.clientes.listar(), store.projetos.listar()]);
+        const cliente = clientes.find(c => c.id === clienteId);
+        const projeto = projetos.find(p => p.id === projetoId);
+        if (!cliente || !projeto) throw new Error('Cliente ou projeto não encontrado.');
+        const ac = apelidoCliente || null;
+        const ap = apelidoProjeto || null;
+        if (ac && clientes.some(c => c.id !== clienteId && (c.apelido === ac || c.token === ac))) {
+            throw new Error(`"${ac}" já é o endereço de outro cliente. Escolha outro.`);
+        }
+        if (ap && projetos.some(p => p.id !== projetoId && p.cliente_id === clienteId && p.apelido === ap)) {
+            throw new Error(`"${ap}" já é o endereço de outro projeto deste cliente. Escolha outro.`);
+        }
+        await store.clientes.salvar({ ...cliente, apelido: ac });
+        return store.projetos.salvar({ ...projeto, apelido: ap });
+    },
+
     /** A resposta da equipe dentro de um fio do cliente. */
     responder: (raiz, { tipo, texto, autor }) =>
         store.comentarios.salvar(entradaDaEquipe({ raiz, tipo, texto, autor })),

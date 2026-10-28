@@ -67,6 +67,19 @@ export const kpiHTML = (icone, rotulo, valor, papel) => `
 /** O caminho do link do cliente: o mesmo /e/ do README, pelo apelido ou token. */
 export const caminhoDoCliente = (cliente) => `/e/${encodeURIComponent(cliente?.apelido || cliente?.token || '')}`;
 
+/** A apresentação de um projeto dentro do link do cliente, pelo apelido ou id. */
+export const caminhoDaApresentacao = (cliente, projeto) =>
+    `${caminhoDoCliente(cliente)}/p/${encodeURIComponent(projeto?.apelido || projeto?.id || '')}`;
+
+/**
+ * Texto livre → apelido de link: "Dr. Daniel Winter" → "dr-daniel-winter".
+ * Sem acento, minúsculo, só letra, número e hífen — é o que sobrevive a ser
+ * lido em voz alta, digitado no celular e colado no WhatsApp sem virar %C3%A7.
+ */
+export const paraApelido = (texto) => String(texto || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+
 /** O link do cliente, completo, e copiado — com o aviso do modo local. */
 export const copiarLinkDoCliente = async (cliente, modo) => {
     const url = `${window.location.origin}${caminhoDoCliente(cliente)}`;

@@ -6,7 +6,7 @@ import { toast } from '../components/toast.js';
 import { navegar } from '../lib/rotas.js';
 import { midia } from '../lib/midia.js';
 import { esc, haQuanto, plural, numero } from '../lib/formato.js';
-import { vazioHTML, kpiHTML, caminhoDoCliente, copiarLinkDoCliente } from '../lib/pecas.js';
+import { vazioHTML, kpiHTML, caminhoDoCliente, caminhoDaApresentacao, copiarLinkDoCliente } from '../lib/pecas.js';
 import { conversas } from '../lib/conversa.js';
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -135,7 +135,7 @@ export const renderPainel = async (container) => {
                 ]),
                 ...(!apresentacao || publicada ? [{
                     id: 'previa', label: 'Ver como o cliente vê', icon: 'external-link',
-                    href: apresentacao ? `${caminhoDoCliente(cliente)}/p/${projeto.id}` : caminhoDoCliente(cliente),
+                    href: apresentacao ? caminhoDaApresentacao(cliente, projeto) : caminhoDoCliente(cliente),
                     externo: true }] : []),
                 { id: 'link', label: 'Copiar link do cliente', icon: 'link',
                   onClick: () => copiarLinkDoCliente(cliente, store.modo) },
